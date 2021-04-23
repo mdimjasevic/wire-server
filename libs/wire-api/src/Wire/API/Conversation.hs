@@ -78,6 +78,7 @@ import Data.Proxy (Proxy (Proxy))
 import Data.String.Conversions (cs)
 import Data.Swagger
 import qualified Data.Swagger.Build.Api as Doc
+import qualified Data.Swagger.Typed as TS
 import Imports
 import qualified Test.QuickCheck as QC
 import Wire.API.Arbitrary (Arbitrary (arbitrary), GenericUniform (..))
@@ -652,6 +653,13 @@ newtype ConversationRename = ConversationRename
   }
   deriving stock (Eq, Show)
   deriving newtype (Arbitrary)
+  deriving (ToSchema) via TS.TypedSchema ConversationRename
+
+instance TS.ToTypedSchema ConversationRename where
+  toTypedSchema _ =
+    TS.named "ConversationUpdateName" $
+      ConversationRename
+        <$> TS.field "name" (description ?~ "The new conversation name") TS.untypedSchema
 
 modelConversationUpdateName :: Doc.Model
 modelConversationUpdateName = Doc.defineModel "ConversationUpdateName" $ do
