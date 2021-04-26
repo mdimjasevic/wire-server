@@ -129,11 +129,13 @@ modelConversation = Doc.defineModel "Conversation" $ do
 
 data Nullable a
 
+-- TODO: create a nullable combinator for Typed.Schema
 instance ToSchema a => ToSchema (Nullable a) where
   declareNamedSchema _ =
     declareNamedSchema (Proxy @a)
       <&> (schema . description . _Just) <>~ " (can be null)"
 
+-- TODO: turn into a Typed.Schema instance
 instance ToSchema Conversation where
   declareNamedSchema _ = do
     idSchema <- declareSchemaRef (Proxy @ConvId)
@@ -271,15 +273,18 @@ data Access
     CodeAccess
   deriving stock (Eq, Ord, Bounded, Enum, Show, Generic)
   deriving (Arbitrary) via (GenericUniform Access)
-  deriving ToSchema via TS.TypedSchema Access
+  deriving (ToSchema) via TS.TypedSchema Access
 
 instance TS.ToTypedSchema Access where
-  toTypedSchema _ = (description ?~ "How users can join conversations")
-    . TS.named "Access" $ TS.enum
-      [ ("private", pure PrivateAccess)
-      , ("invite", pure InviteAccess)
-      , ("link", pure LinkAccess)
-      , ("code", pure CodeAccess) ]
+  toTypedSchema _ =
+    (description ?~ "How users can join conversations")
+      . TS.named "Access"
+      $ TS.enum
+        [ ("private", pure PrivateAccess),
+          ("invite", pure InviteAccess),
+          ("link", pure LinkAccess),
+          ("code", pure CodeAccess)
+        ]
 
 typeAccess :: Doc.DataType
 typeAccess = Doc.string . Doc.enum $ cs . encode <$> [(minBound :: Access) ..]
@@ -315,16 +320,18 @@ data AccessRole
     NonActivatedAccessRole
   deriving stock (Eq, Ord, Show, Generic)
   deriving (Arbitrary) via (GenericUniform AccessRole)
-  deriving ToSchema via TS.TypedSchema AccessRole
+  deriving (ToSchema) via TS.TypedSchema AccessRole
 
 instance TS.ToTypedSchema AccessRole where
   toTypedSchema _ =
-    ( description ?~ "Which users can join conversations" )
-    . TS.named "AccessRole" $ TS.enum
-      [ ("private", pure PrivateAccessRole)
-      , ("team", pure TeamAccessRole)
-      , ("activated", pure ActivatedAccessRole)
-      , ("non_activated", pure NonActivatedAccessRole) ]
+    (description ?~ "Which users can join conversations")
+      . TS.named "AccessRole"
+      $ TS.enum
+        [ ("private", pure PrivateAccessRole),
+          ("team", pure TeamAccessRole),
+          ("activated", pure ActivatedAccessRole),
+          ("non_activated", pure NonActivatedAccessRole)
+        ]
 
 instance ToJSON AccessRole where
   toJSON PrivateAccessRole = String "private"
@@ -687,8 +694,10 @@ instance TS.ToTypedSchema ConversationAccessUpdate where
     (description ?~ "Contains conversation properties to update")
       . TS.named "ConversationAccessUpdate"
       $ ConversationAccessUpdate
-        <$> TS.field "access" (description ?~ "List of conversation access modes")
-              (TS.array TS.schema)
+        <$> TS.field
+          "access"
+          (description ?~ "List of conversation access modes")
+          (TS.array TS.schema)
         <*> TS.field' "access_role" TS.schema
 
 modelConversationAccessUpdate :: Doc.Model

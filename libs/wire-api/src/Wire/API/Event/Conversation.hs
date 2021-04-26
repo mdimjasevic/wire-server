@@ -280,7 +280,7 @@ data EventData
 
 instance ToTypedSchema EventData where
   toTypedSchema _ =
-    named "EventData" $
+    named "EventData" . field' "data" $
       EdMembersJoin . SimpleMembers
         <$> asum
           [ field'
@@ -304,13 +304,10 @@ instance ToTypedSchema EventData where
         <|> (EdConvAccessUpdate <$> unnamed schema)
         <|> (EdConvMessageTimerUpdate <$> unnamed schema)
         <|> (EdConvCodeUpdate <$> unnamed schema)
-
--- FUTUREWORK: add the remaining cases
-
--- <|> EdMemberUpdate <$> unnamed schema
--- <|> EdConversation <$> unnamed schema
--- <|> EdTyping <$> unnamed schema
--- <|> EdOtrMessage <$> unnamed schema
+        <|> (EdMemberUpdate <$> unnamed schema)
+        <|> (EdConversation <$> unnamed untypedSchema)
+        <|> (EdTyping <$> unnamed schema)
+        <|> (EdOtrMessage <$> unnamed schema)
 
 modelMemberEvent :: Doc.Model
 modelMemberEvent = Doc.defineModel "MemberEvent" $ do
@@ -543,6 +540,45 @@ data MemberUpdateData = MemberUpdateData
   deriving stock (Eq, Show, Generic)
   deriving (Arbitrary) via (GenericUniform MemberUpdateData)
 
+instance ToTypedSchema MemberUpdateData where
+  toTypedSchema _ =
+    (description ?~ "Event data on member updates")
+      . named "MemberUpdateData"
+      $ MemberUpdateData
+        <$> field
+          "target"
+          (description ?~ "Target ID of the user that the action was performed on")
+          (optional (unnamed untypedSchema))
+        <*> field
+          "otr_muted"
+          (description ?~ "Whether to notify on conversation updates")
+          (unnamed untypedSchema)
+        <*> field' "otr_muted_status" (optional (unnamed untypedSchema))
+        <*> field
+          "otr_muted_ref"
+          (description ?~ "A reference point for (un)muting")
+          (optional (unnamed untypedSchema))
+        <*> field
+          "otr_archived"
+          (description ?~ "Whether to notify on conversation updates")
+          (optional (unnamed untypedSchema))
+        <*> field
+          "otr_archived_ref"
+          (description ?~ "A reference point for (un)archiving")
+          (optional (unnamed untypedSchema))
+        <*> field
+          "hidden"
+          (description ?~ "Whether the conversation is hidden")
+          (optional (unnamed untypedSchema))
+        <*> field
+          "hidden_ref"
+          (description ?~ "A reference point for (un)hiding")
+          (optional (unnamed untypedSchema))
+        <*> field
+          "conversation_role"
+          (description ?~ "Name of the conversation role to update to")
+          (optional (unnamed schema))
+
 modelMemberUpdateData :: Doc.Model
 modelMemberUpdateData = Doc.defineModel "MemberUpdateData" $ do
   Doc.description "Event data on member updates"
@@ -606,6 +642,24 @@ data OtrMessage = OtrMessage
   }
   deriving stock (Eq, Show, Generic)
   deriving (Arbitrary) via (GenericUniform OtrMessage)
+
+instance ToTypedSchema OtrMessage where
+  toTypedSchema _ =
+    named "OtrMessage" $
+      OtrMessage
+        <$> field' "sender" untypedSchema
+        <*> field' "recipient" untypedSchema
+        <*> field
+          "text"
+          (description ?~ "The ciphertext for the recipient (Base64 in JSON)")
+          (unnamed untypedSchema)
+        <*> field
+          "data"
+          ( description
+              ?~ "Extra (symmetric) data (i.e. ciphertext, Base64 in JSON) \
+                 \that is common with all other recipients."
+          )
+          (optional (unnamed untypedSchema))
 
 modelOtrMessage :: Doc.Model
 modelOtrMessage = Doc.defineModel "OtrMessage" $ do

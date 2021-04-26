@@ -29,8 +29,11 @@ module Wire.API.Conversation.Typing
   )
 where
 
+import Control.Lens ((?~))
 import Data.Aeson
+import Data.Swagger (description)
 import qualified Data.Swagger.Build.Api as Doc
+import Data.Swagger.Typed
 import Imports
 import Wire.API.Arbitrary (Arbitrary, GenericUniform (..))
 
@@ -39,6 +42,13 @@ newtype TypingData = TypingData
   }
   deriving stock (Eq, Show, Generic)
   deriving newtype (Arbitrary)
+
+instance ToTypedSchema TypingData where
+  toTypedSchema _ =
+    (description ?~ "Data to describe typing info")
+      . named "TypingData"
+      $ TypingData
+        <$> field "status" (description ?~ "typing status") schema
 
 modelTyping :: Doc.Model
 modelTyping = Doc.defineModel "Typing" $ do
@@ -59,6 +69,14 @@ data TypingStatus
   | StoppedTyping
   deriving stock (Eq, Ord, Show, Generic)
   deriving (Arbitrary) via (GenericUniform TypingStatus)
+
+instance ToTypedSchema TypingStatus where
+  toTypedSchema _ =
+    named "TypingStatus" $
+      enum
+        [ ("started", pure StartedTyping),
+          ("stopped", pure StoppedTyping)
+        ]
 
 typeTypingStatus :: Doc.DataType
 typeTypingStatus =
