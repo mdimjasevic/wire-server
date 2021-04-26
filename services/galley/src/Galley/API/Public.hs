@@ -79,9 +79,10 @@ import qualified Wire.API.Conversation.Code as Public
 import qualified Wire.API.Conversation.Role as Public
 import qualified Wire.API.Conversation.Typing as Public
 import qualified Wire.API.CustomBackend as Public
+import qualified Wire.API.Event.Conversation as Public (Event)
 import qualified Wire.API.Event.Team as Public ()
 import qualified Wire.API.Message as Public
-import qualified Wire.API.Notification as Public
+import qualified Wire.API.Notification as Public hiding (Event)
 import qualified Wire.API.Swagger as Public.Swagger (models)
 import qualified Wire.API.Team as Public
 import qualified Wire.API.Team.Conversation as Public
@@ -244,6 +245,18 @@ data Api routes = Api
         :> "one2one"
         :> ReqBody '[Servant.JSON] Public.NewConvUnmanaged
         :> UVerb 'POST '[Servant.JSON] Create.ConversationResponses,
+    -- This endpoint can lead to the following events being sent:
+    -- - ConvRename event to members
+    updateConversationName ::
+      routes
+        :- Summary "Update conversation name"
+        :> ZAuthServant
+        :> ZAuthServant' 'ZAuthServantConn
+        -- :> "conversations"
+        :> Capture "cnv" ConvId
+        -- :> "rename"
+        :> ReqBody '[Servant.JSON] Public.ConversationRename
+        :> Put '[Servant.JSON] Public.Event,
     -- Team Conversations
 
     getTeamConversationRoles ::
@@ -316,6 +329,7 @@ servantSitemap =
         createGroupConversation = Create.createGroupConversation,
         createSelfConversation = Create.createSelfConversation,
         createOne2OneConversation = Create.createOne2OneConversation,
+        updateConversationName = Update.updateConversationName,
         getTeamConversationRoles = Teams.getTeamConversationRoles,
         getTeamConversations = Teams.getTeamConversations,
         getTeamConversation = Teams.getTeamConversation,
@@ -703,22 +717,6 @@ sitemap = do
       .&. accept "application" "json"
 
   -- Conversation API ---------------------------------------------------
-
-  -- This endpoint can lead to the following events being sent:
-  -- - ConvRename event to members
-  put "/conversations/:cnv/name" (continue Update.updateConversationNameH) $
-    zauthUserId
-      .&. zauthConnId
-      .&. capture "cnv"
-      .&. jsonRequest @Public.ConversationRename
-  document "PUT" "updateConversationName" $ do
-    summary "Update conversation name"
-    parameter Path "cnv" bytes' $
-      description "Conversation ID"
-    body (ref Public.modelConversationUpdateName) $
-      description "JSON body"
-    returns (ref Public.modelEvent)
-    errorResponse Error.convNotFound
 
   -- This endpoint can lead to the following events being sent:
   -- - ConvRename event to members

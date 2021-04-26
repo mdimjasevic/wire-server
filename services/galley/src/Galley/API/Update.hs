@@ -27,7 +27,7 @@ module Galley.API.Update
     rmCodeH,
     getCodeH,
     updateConversationDeprecatedH,
-    updateConversationNameH,
+    updateConversationName,
     updateConversationAccessH,
     updateConversationReceiptModeH,
     updateConversationMessageTimerH,
@@ -697,11 +697,6 @@ newMessage usr con cnv msg now (m, c, t) ~(toBots, toUsers) =
 
 updateConversationDeprecatedH :: UserId ::: ConnId ::: ConvId ::: JsonRequest Public.ConversationRename -> Galley Response
 updateConversationDeprecatedH (zusr ::: zcon ::: cnv ::: req) = do
-  convRename <- fromJsonBody req
-  setStatus status200 . json <$> updateConversationName zusr zcon cnv convRename
-
-updateConversationNameH :: UserId ::: ConnId ::: ConvId ::: JsonRequest Public.ConversationRename -> Galley Response
-updateConversationNameH (zusr ::: zcon ::: cnv ::: req) = do
   convRename <- fromJsonBody req
   setStatus status200 . json <$> updateConversationName zusr zcon cnv convRename
 
