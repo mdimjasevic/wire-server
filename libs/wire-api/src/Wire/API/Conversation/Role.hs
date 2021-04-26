@@ -63,7 +63,7 @@ import Data.Hashable
 import Data.Proxy (Proxy (..))
 import Data.Range (fromRange, genRangeText)
 import qualified Data.Set as Set
-import Data.Swagger (NamedSchema (..), Referenced (Inline), Schema, description, schema)
+import Data.Swagger (NamedSchema (..), Referenced (Inline), Schema, description)
 import qualified Data.Swagger.Build.Api as Doc
 import Data.Swagger.Lens (properties)
 import Data.Swagger.Schema hiding (constructorTagModifier)
@@ -71,6 +71,7 @@ import Deriving.Swagger hiding (camelTo2)
 import Imports
 import qualified Test.QuickCheck as QC
 import Wire.API.Arbitrary (Arbitrary (arbitrary), GenericUniform (..))
+import Data.Swagger.Typed (ToTypedSchema (..), named, untypedSchema, unnamed, TypedSchema)
 
 --------------------------------------------------------------------------------
 -- Role
@@ -188,14 +189,16 @@ instance FromJSON ConversationRolesList where
 newtype RoleName = RoleName {fromRoleName :: Text}
   deriving stock (Eq, Show, Generic)
   deriving newtype (ToJSON, ToByteString, Hashable)
+  deriving ToSchema via TypedSchema RoleName
 
-instance ToSchema RoleName where
-  declareNamedSchema _ =
-    declareNamedSchema (Proxy @Text)
-      <&> (schema . description)
-      ?~ "Role name, between 2 and 128 chars, 'wire_' prefix \
-         \is reserved for roles designed by Wire (i.e., no \
-         \custom roles can have the same prefix)"
+instance ToTypedSchema RoleName where
+  toTypedSchema _ = (description ?~ desc)
+    . named "RoleName"
+    $ RoleName <$> unnamed untypedSchema
+    where
+      desc = "Role name, between 2 and 128 chars, 'wire_' prefix \
+             \is reserved for roles designed by Wire (i.e., no \
+             \custom roles can have the same prefix)"
 
 instance FromByteString RoleName where
   parser = parser >>= maybe (fail "Invalid RoleName") return . parseRoleName

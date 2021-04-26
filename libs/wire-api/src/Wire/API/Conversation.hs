@@ -271,15 +271,15 @@ data Access
     CodeAccess
   deriving stock (Eq, Ord, Bounded, Enum, Show, Generic)
   deriving (Arbitrary) via (GenericUniform Access)
+  deriving ToSchema via TS.TypedSchema Access
 
-instance ToSchema Access where
-  declareNamedSchema _ =
-    pure $
-      NamedSchema (Just "Access") $
-        mempty
-          & description ?~ "How users can join conversations "
-          & type_ ?~ SwaggerString
-          & enum_ ?~ ["private", "invite", "link", "code"]
+instance TS.ToTypedSchema Access where
+  toTypedSchema _ = (description ?~ "How users can join conversations")
+    . TS.named "Access" $ TS.enum
+      [ ("private", pure PrivateAccess)
+      , ("invite", pure InviteAccess)
+      , ("link", pure LinkAccess)
+      , ("code", pure CodeAccess) ]
 
 typeAccess :: Doc.DataType
 typeAccess = Doc.string . Doc.enum $ cs . encode <$> [(minBound :: Access) ..]
@@ -315,15 +315,16 @@ data AccessRole
     NonActivatedAccessRole
   deriving stock (Eq, Ord, Show, Generic)
   deriving (Arbitrary) via (GenericUniform AccessRole)
+  deriving ToSchema via TS.TypedSchema AccessRole
 
-instance ToSchema AccessRole where
-  declareNamedSchema _ =
-    pure $
-      NamedSchema (Just "AccessRole") $
-        mempty
-          & description ?~ "Which users can join conversations"
-          & type_ ?~ SwaggerString
-          & enum_ ?~ ["private", "team", "activated", "non_activated"]
+instance TS.ToTypedSchema AccessRole where
+  toTypedSchema _ =
+    ( description ?~ "Which users can join conversations" )
+    . TS.named "AccessRole" $ TS.enum
+      [ ("private", pure PrivateAccessRole)
+      , ("team", pure TeamAccessRole)
+      , ("activated", pure ActivatedAccessRole)
+      , ("non_activated", pure NonActivatedAccessRole) ]
 
 instance ToJSON AccessRole where
   toJSON PrivateAccessRole = String "private"
@@ -681,6 +682,14 @@ data ConversationAccessUpdate = ConversationAccessUpdate
   deriving stock (Eq, Show, Generic)
   deriving (Arbitrary) via (GenericUniform ConversationAccessUpdate)
 
+instance TS.ToTypedSchema ConversationAccessUpdate where
+  toTypedSchema _ = (description ?~ "Contains conversation properties to update")
+    . TS.named "ConversationAccessUpdate"
+    $ ConversationAccessUpdate
+      <$> TS.field "access" (description ?~ "List of conversation access modes")
+            (TS.array TS.schema)
+      <*> TS.field' "access_role" TS.schema
+
 modelConversationAccessUpdate :: Doc.Model
 modelConversationAccessUpdate = Doc.defineModel "ConversationAccessUpdate" $ do
   Doc.description "Contains conversation properties to update"
@@ -708,6 +717,15 @@ data ConversationReceiptModeUpdate = ConversationReceiptModeUpdate
   deriving stock (Eq, Show, Generic)
   deriving (Arbitrary) via (GenericUniform ConversationReceiptModeUpdate)
 
+instance TS.ToTypedSchema ConversationReceiptModeUpdate where
+  toTypedSchema _ = (description ?~ desc) . TS.named "ConversationReceiptModeUpdate" $
+    ConversationReceiptModeUpdate <$>
+      TS.field' "receipt_mode" (ReceiptMode <$> TS.untypedSchema)
+    where
+      desc = "Contains conversation receipt mode to update to. Receipt mode tells \
+             \clients whether certain types of receipts should be sent in the given \
+             \conversation or not. How this value is interpreted is up to clients."
+
 modelConversationReceiptModeUpdate :: Doc.Model
 modelConversationReceiptModeUpdate = Doc.defineModel "conversationReceiptModeUpdate" $ do
   Doc.description
@@ -733,6 +751,16 @@ data ConversationMessageTimerUpdate = ConversationMessageTimerUpdate
   }
   deriving stock (Eq, Show, Generic)
   deriving (Arbitrary) via (GenericUniform ConversationMessageTimerUpdate)
+
+instance TS.ToTypedSchema ConversationMessageTimerUpdate where
+  toTypedSchema _ =
+    (description ?~ "Contains conversation properties to update")
+    . TS.named "ConversationMessageTimerUpdate" $
+      ConversationMessageTimerUpdate <$>
+        TS.field
+          "message_timer"
+          (description ?~ "Conversation message timer (in milliseconds); can be null")
+          (Just . Ms <$> TS.unnamed TS.untypedSchema)
 
 modelConversationMessageTimerUpdate :: Doc.Model
 modelConversationMessageTimerUpdate = Doc.defineModel "ConversationMessageTimerUpdate" $ do
