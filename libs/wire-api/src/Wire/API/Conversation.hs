@@ -683,12 +683,13 @@ data ConversationAccessUpdate = ConversationAccessUpdate
   deriving (Arbitrary) via (GenericUniform ConversationAccessUpdate)
 
 instance TS.ToTypedSchema ConversationAccessUpdate where
-  toTypedSchema _ = (description ?~ "Contains conversation properties to update")
-    . TS.named "ConversationAccessUpdate"
-    $ ConversationAccessUpdate
-      <$> TS.field "access" (description ?~ "List of conversation access modes")
-            (TS.array TS.schema)
-      <*> TS.field' "access_role" TS.schema
+  toTypedSchema _ =
+    (description ?~ "Contains conversation properties to update")
+      . TS.named "ConversationAccessUpdate"
+      $ ConversationAccessUpdate
+        <$> TS.field "access" (description ?~ "List of conversation access modes")
+              (TS.array TS.schema)
+        <*> TS.field' "access_role" TS.schema
 
 modelConversationAccessUpdate :: Doc.Model
 modelConversationAccessUpdate = Doc.defineModel "ConversationAccessUpdate" $ do
@@ -718,13 +719,15 @@ data ConversationReceiptModeUpdate = ConversationReceiptModeUpdate
   deriving (Arbitrary) via (GenericUniform ConversationReceiptModeUpdate)
 
 instance TS.ToTypedSchema ConversationReceiptModeUpdate where
-  toTypedSchema _ = (description ?~ desc) . TS.named "ConversationReceiptModeUpdate" $
-    ConversationReceiptModeUpdate <$>
-      TS.field' "receipt_mode" (ReceiptMode <$> TS.untypedSchema)
+  toTypedSchema _ =
+    (description ?~ desc) . TS.named "ConversationReceiptModeUpdate" $
+      ConversationReceiptModeUpdate
+        <$> TS.field' "receipt_mode" (ReceiptMode <$> TS.untypedSchema)
     where
-      desc = "Contains conversation receipt mode to update to. Receipt mode tells \
-             \clients whether certain types of receipts should be sent in the given \
-             \conversation or not. How this value is interpreted is up to clients."
+      desc =
+        "Contains conversation receipt mode to update to. Receipt mode tells \
+        \clients whether certain types of receipts should be sent in the given \
+        \conversation or not. How this value is interpreted is up to clients."
 
 modelConversationReceiptModeUpdate :: Doc.Model
 modelConversationReceiptModeUpdate = Doc.defineModel "conversationReceiptModeUpdate" $ do
@@ -755,9 +758,9 @@ data ConversationMessageTimerUpdate = ConversationMessageTimerUpdate
 instance TS.ToTypedSchema ConversationMessageTimerUpdate where
   toTypedSchema _ =
     (description ?~ "Contains conversation properties to update")
-    . TS.named "ConversationMessageTimerUpdate" $
-      ConversationMessageTimerUpdate <$>
-        TS.field
+      . TS.named "ConversationMessageTimerUpdate"
+      $ ConversationMessageTimerUpdate
+        <$> TS.field
           "message_timer"
           (description ?~ "Conversation message timer (in milliseconds); can be null")
           (Just . Ms <$> TS.unnamed TS.untypedSchema)

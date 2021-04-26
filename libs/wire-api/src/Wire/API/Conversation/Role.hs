@@ -63,7 +63,7 @@ import Data.Hashable
 import Data.Proxy (Proxy (..))
 import Data.Range (fromRange, genRangeText)
 import qualified Data.Set as Set
-import Data.Swagger (NamedSchema (..), Referenced (Inline), Schema, description)
+import Data.Swagger (NamedSchema (..), Referenced(Inline), Schema, description, description)
 import qualified Data.Swagger.Build.Api as Doc
 import Data.Swagger.Lens (properties)
 import Data.Swagger.Schema hiding (constructorTagModifier)
@@ -192,13 +192,15 @@ newtype RoleName = RoleName {fromRoleName :: Text}
   deriving ToSchema via TypedSchema RoleName
 
 instance ToTypedSchema RoleName where
-  toTypedSchema _ = (description ?~ desc)
-    . named "RoleName"
-    $ RoleName <$> unnamed untypedSchema
+  toTypedSchema _ =
+    (description ?~ desc)
+      . named "RoleName"
+      $ RoleName <$> unnamed untypedSchema
     where
-      desc = "Role name, between 2 and 128 chars, 'wire_' prefix \
-             \is reserved for roles designed by Wire (i.e., no \
-             \custom roles can have the same prefix)"
+      desc =
+        "Role name, between 2 and 128 chars, 'wire_' prefix \
+        \is reserved for roles designed by Wire (i.e., no \
+        \custom roles can have the same prefix)"
 
 instance FromByteString RoleName where
   parser = parser >>= maybe (fail "Invalid RoleName") return . parseRoleName
