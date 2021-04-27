@@ -20,6 +20,7 @@ library:
   - QuickCheck >=2.14
   - attoparsec >=0.10
   - base64-bytestring >=1.0
+  - bifunctors
   - bytestring >=0.9
   - bytestring-conversion >=0.2
   - case-insensitive
@@ -41,6 +42,7 @@ library:
   - lens >=4.12
   - mime >=0.4
   - pem >=0.2
+  - profunctors
   - protobuf >=0.2
   - quickcheck-instances >=0.3.16
   - string-conversions

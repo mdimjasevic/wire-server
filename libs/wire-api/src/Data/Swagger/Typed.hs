@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -22,7 +23,9 @@ import Control.Applicative
 import Control.Lens (Prism)
 import Control.Lens.Combinators (Choice (..), Profunctor (..))
 import qualified Data.Aeson.Types as A
-import Data.Monoid
+import Data.Bifunctor.Joker
+import Data.Monoid hiding (Product)
+import Data.Profunctor (Star (..))
 import Data.Proxy (Proxy (..))
 import qualified Data.Swagger as S
 import qualified Data.Swagger.Declare as S
@@ -32,58 +35,69 @@ import Imports hiding (Product)
 
 type Declare = S.Declare (S.Definitions S.Schema)
 
--- A profunctor with a nullary and a unary value.
---
--- Given two functors @f@ and @g@, a value of @P f g a b@ is something
--- that can either immediately return a value of type @f b@, or use an
--- argument of type @a@ to produce a @g b@.
---
--- This can used to encode bidirectional schemas. For example, @f@ can
--- be a parser functor, while @g@ can be a constant functor able to
--- contain serialised values.
---
--- Any static information about the schema can be encoded in the
--- nullary portion of @P@. For example, a Swagger schema specification
--- can be added there as an extra constant component.
-data P f g a b = P (f b) (a -> g b)
+newtype SchemaIn v a b = SchemaIn (v -> A.Parser b)
+  deriving (Functor)
+  deriving (Applicative, Alternative) via (ReaderT v A.Parser)
+  deriving (Profunctor, Choice) via Joker (ReaderT v A.Parser)
+
+newtype SchemaOut v a b = SchemaOut (a -> Maybe v)
+  deriving (Functor)
+  deriving (Applicative) via (ReaderT a (Const (Ap Maybe v)))
+  deriving (Profunctor) via Star (Const (Maybe v))
+  deriving (Choice) via Star (Const (Alt Maybe v))
+
+-- /Note/: deriving Choice via Star (Const (Maybe v)) would also
+-- type-check, but it would use the wrong Monoid structure of Maybe v:
+-- here we want the monoid structure corresponding to the Alternative
+-- instance of Maybe, instead of the one coming from a Semigroup
+-- structure of v.
+
+-- The following instance is correct because `Ap Maybe v` is a
+-- near-semiring when v is a monoid
+instance Monoid v => Alternative (SchemaOut v a) where
+  empty = SchemaOut $ pure empty
+  SchemaOut x1 <|> SchemaOut x2 = SchemaOut $ \a ->
+    x1 a <|> x2 a
+
+newtype SchemaDoc doc a b = SchemaDoc doc
+  deriving (Functor)
+  deriving (Applicative) via (Const doc)
+  deriving (Profunctor, Choice) via Joker (Const doc)
+
+-- This instance is not exactly correct, distributivity does not hold
+-- in general.
+-- FUTUREWORK: introduce a NearSemiRing type class and replace the
+-- `Monoid doc` constraint with `NearSemiRing doc`.
+instance Monoid doc => Alternative (SchemaDoc doc a) where
+  empty = SchemaDoc mempty
+  SchemaDoc d1 <|> SchemaDoc d2 = SchemaDoc (d1 <> d2)
+
+data SchemaP doc v v' a b
+  = SchemaP
+      (SchemaDoc doc a b)
+      (SchemaIn v a b)
+      (SchemaOut v' a b)
   deriving (Functor)
 
-instance (Functor f, Functor g) => Profunctor (P f g) where
-  dimap f g (P u v) = P (fmap g u) (fmap g . v . f)
+instance (Monoid doc, Monoid v') => Applicative (SchemaP doc v v' a) where
+  pure x = SchemaP (pure x) (pure x) (pure x)
+  SchemaP d1 i1 o1 <*> SchemaP d2 i2 o2 =
+    SchemaP (d1 <*> d2) (i1 <*> i2) (o1 <*> o2)
 
-instance (Applicative f, Applicative g) => Applicative (P f g a) where
-  pure x = P (pure x) (const (pure x))
-  P u1 v1 <*> P u2 v2 = P (u1 <*> u2) (\a -> v1 a <*> v2 a)
+instance (Monoid doc, Monoid v') => Alternative (SchemaP doc v v' a) where
+  empty = SchemaP empty empty empty
+  SchemaP d1 i1 o1 <|> SchemaP d2 i2 o2 =
+    SchemaP (d1 <|> d2) (i1 <|> i2) (o1 <|> o2)
 
-instance (Alternative f, Alternative g) => Alternative (P f g a) where
-  empty = P empty (const empty)
-  P u1 v1 <|> P u2 v2 = P (u1 <|> u2) (\a -> v1 a <|> v2 a)
+instance Profunctor (SchemaP doc v v') where
+  dimap f g (SchemaP d i o) =
+    SchemaP (dimap f g d) (dimap f g i) (dimap f g o)
 
-data Schema0 v ss a = Schema0 ss (v -> A.Parser a)
-  deriving (Functor)
+instance Choice (SchemaP doc v v') where
+  left' (SchemaP d i o) = SchemaP (left' d) (left' i) (left' o)
+  right' (SchemaP d i o) = SchemaP (right' d) (right' i) (right' o)
 
-instance Monoid ss => Applicative (Schema0 v ss) where
-  pure x = Schema0 mempty (const (pure x))
-  Schema0 m1 p1 <*> Schema0 m2 p2 = Schema0 (m1 <> m2) (\a -> p1 a <*> p2 a)
-
-instance Monoid ss => Alternative (Schema0 v ss) where
-  empty = Schema0 mempty (const empty)
-  Schema0 m1 p1 <|> Schema0 m2 p2 = Schema0 (m1 <> m2) (\a -> p1 a <|> p2 a)
-
-newtype Schema1 m a = Schema1 {getSchema1 :: Maybe m}
-  deriving (Functor)
-
-instance Monoid m => Applicative (Schema1 m) where
-  pure _ = Schema1 (Just mempty)
-  Schema1 m1 <*> Schema1 m2 = Schema1 $ (<>) <$> m1 <*> m2
-
-instance Monoid m => Alternative (Schema1 m) where
-  empty = Schema1 empty
-  Schema1 m1 <|> Schema1 m2 = Schema1 (m1 <|> m2)
-
-type SchemaP ss v m = P (Schema0 v ss) (Schema1 m)
-
-type SchemaP' ss v m a = SchemaP ss v m a a
+type SchemaP' doc v v' a = SchemaP doc v v' a a
 
 type ObjectSchema ss a = SchemaP' ss A.Object [A.Pair] a
 
@@ -109,29 +123,18 @@ instance Semigroup ValueM where
 instance Monoid ValueM where
   mempty = ValueM A.Null
 
-instance Choice (SchemaP ss v m) where
-  left' (P (Schema0 s u) v) = P (Schema0 s u') v'
-    where
-      u' = fmap Left . u
-      v' = Schema1 . either (getSchema1 . v) (const Nothing)
+schemaDoc :: SchemaP ss v m a b -> ss
+schemaDoc (SchemaP (SchemaDoc doc) _ _) = doc
 
-  right' (P (Schema0 s u) v) = P (Schema0 s u') v'
-    where
-      u' = fmap Right . u
-      v' = Schema1 . either (const Nothing) (getSchema1 . v)
-
-schemaIn :: SchemaP ss v m a b -> v -> A.Parser b
-schemaIn (P (Schema0 _ r) _) = r
+schemaIn :: SchemaP doc v v' a b -> v -> A.Parser b
+schemaIn (SchemaP _ (SchemaIn i) _) = i
 
 schemaOut :: SchemaP ss v m a b -> a -> Maybe m
-schemaOut (P _ w) = getSchema1 . w
-
-schemaSS :: SchemaP ss v m a b -> ss
-schemaSS (P (Schema0 s _) _) = s
+schemaOut (SchemaP _ _ (SchemaOut o)) = o
 
 -- TODO: make this work with (Named ss) input as well
 field :: Monoid ss => Text -> ValueSchema ss a -> ObjectSchema ss a
-field name sch = P (Schema0 s r) (Schema1 . w)
+field name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r obj = A.explicitParseField (schemaIn sch) obj name
     w x = do
@@ -147,21 +150,23 @@ tag :: Prism b b' a a' -> SchemaP ss v m a a' -> SchemaP ss v m b b'
 tag f = rmap runIdentity . f . rmap Identity
 
 object :: Text -> ObjectSchema SwaggerDoc a -> ValueSchema NamedSwaggerDoc a
-object name sch = P (Schema0 s r) (Schema1 . w)
+object name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r = A.withObject (T.unpack name) (schemaIn sch)
     w x = ValueM . A.object <$> schemaOut sch x
     s = setName name mempty -- TODO
 
 unnamed :: SchemaP NamedSwaggerDoc v m a b -> SchemaP SwaggerDoc v m a b
-unnamed (P (Schema0 doc u) v) = P (Schema0 (unnamedDoc doc) u) v
+unnamed (SchemaP (SchemaDoc doc) i o) =
+  SchemaP (SchemaDoc (unnamedDoc doc)) i o
 
 named :: Text -> SchemaP SwaggerDoc v m a b -> SchemaP NamedSwaggerDoc v m a b
-named name (P (Schema0 doc u) v) = P (Schema0 (setName name doc) u) v
+named name (SchemaP (SchemaDoc doc) u v) =
+  SchemaP (SchemaDoc (setName name doc)) u v
 
 -- FUTUREWORK: use the name in NamedSwaggerDoc somehow
 array :: Text -> ValueSchema NamedSwaggerDoc a -> ValueSchema SwaggerDoc [a]
-array name sch = P (Schema0 s r) (Schema1 . w)
+array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r = A.withArray (T.unpack name) $ \arr -> mapM (schemaIn sch) $ V.toList arr
     s = mempty
@@ -187,7 +192,7 @@ class ToTypedSchema a where
 newtype TypedSchema a = TypedSchema {getTypedSchema :: a}
 
 instance ToTypedSchema a => S.ToSchema (TypedSchema a) where
-  declareNamedSchema _ = getAp (schemaSS (schema @a))
+  declareNamedSchema _ = getAp (schemaDoc (schema @a))
 
 instance ToTypedSchema a => A.ToJSON (TypedSchema a) where
   toJSON =
@@ -221,7 +226,10 @@ instance ToTypedSchema String where schema = genericToTypedSchema
 
 genericToTypedSchema :: forall a. (S.ToSchema a, A.ToJSON a, A.FromJSON a) => ValueSchema NamedSwaggerDoc a
 genericToTypedSchema =
-  P (Schema0 (Ap (S.declareNamedSchema (Proxy @a))) r) (Schema1 . w)
+  SchemaP
+    (SchemaDoc (Ap (S.declareNamedSchema (Proxy @a))))
+    (SchemaIn r)
+    (SchemaOut w)
   where
     r = A.parseJSON
     w = Just . ValueM . A.toJSON
