@@ -45,6 +45,9 @@ settings:
   featureFlags:  # see #RefConfigOptions in `/docs/reference`
     sso: disabled-by-default
     legalhold: disabled-by-default
+    legalholdEnabledTeams:
+    - f0869dc8-a760-11eb-b1c5-a7b08fd5a221  # That one Customer
+    - f38a9aba-a760-11eb-b062-93b75bd81631  # Galactic Overloard and friends
     teamSearchVisibility: disabled-by-default
     appLock:
       defaults:
