@@ -21,6 +21,7 @@ module Main
 where
 
 import Imports
+import qualified Test.Data.Swagger.Typed as Data.Swagger.Typed
 import Test.Tasty
 import qualified Test.Wire.API.Call.Config as Call.Config
 import qualified Test.Wire.API.Roundtrip.Aeson as Roundtrip.Aeson
@@ -45,5 +46,6 @@ main =
         Roundtrip.Aeson.tests,
         Roundtrip.ByteString.tests,
         Swagger.tests,
-        Roundtrip.CSV.tests
+        Roundtrip.CSV.tests,
+        Data.Swagger.Typed.tests
       ]

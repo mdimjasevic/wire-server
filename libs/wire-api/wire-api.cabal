@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b0062afade680bb271c22de71f4e64c9e2fba01a00b1319536910a5fc866e8d6
+-- hash: 2562f2e8a68aedd662b54cfb671b45ce8cca8b74928d5902719c3dfc2031b2a7
 
 name:           wire-api
 version:        0.1.0
@@ -19,6 +19,7 @@ build-type:     Simple
 
 library
   exposed-modules:
+      Data.Swagger.Typed
       Wire.API.Arbitrary
       Wire.API.Asset
       Wire.API.Asset.V3
@@ -124,6 +125,7 @@ test-suite wire-api-tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   other-modules:
+      Test.Data.Swagger.Typed
       Test.Wire.API.Call.Config
       Test.Wire.API.Roundtrip.Aeson
       Test.Wire.API.Roundtrip.ByteString
