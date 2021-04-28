@@ -15,8 +15,10 @@ tests :: TestTree
 tests = testGroup "Swagger.Typed"
   [ testFooToJSON
   , testFooFromJSON
-  , testBarToJSON
-  , testBarFromJSON
+  , testBarAToJSON
+  , testBarAFromJSON
+  , testBarBToJSON
+  , testBarBFromJSON
   ]
 
 testFooToJSON :: TestTree
@@ -34,19 +36,33 @@ testFooFromJSON = testCase "fromJSON Foo" $
     (Success exampleFoo)
     (fromJSON exampleFooJSON)
 
-testBarToJSON :: TestTree
-testBarToJSON = testCase "toJSON Bar" $
+testBarAToJSON :: TestTree
+testBarAToJSON = testCase "toJSON BarA" $
   assertEqual
     "Bar: JSON should match handwritten JSON"
-    exampleBarJSON
-    (toJSON exampleBar)
+    exampleBarAJSON
+    (toJSON exampleBarA)
 
-testBarFromJSON :: TestTree
-testBarFromJSON = testCase "roundtrip Bar" $
+testBarAFromJSON :: TestTree
+testBarAFromJSON = testCase "fromJSON BarA" $
   assertEqual
     "Bar: fromJSON . toJSON == Success"
-    (Success exampleBar)
-    (fromJSON exampleBarJSON)
+    (Success exampleBarA)
+    (fromJSON exampleBarAJSON)
+
+testBarBToJSON :: TestTree
+testBarBToJSON = testCase "toJSON BarB" $
+  assertEqual
+    "Bar: JSON should match handwritten JSON"
+    exampleBarBJSON
+    (toJSON exampleBarB)
+
+testBarBFromJSON :: TestTree
+testBarBFromJSON = testCase "fromJSON BarB" $
+  assertEqual
+    "Bar: fromJSON . toJSON == Success"
+    (Success exampleBarB)
+    (fromJSON exampleBarBJSON)
 
 data A = A {thing :: Text, other :: Int}
   deriving (Eq, Show)
@@ -105,10 +121,16 @@ _BarB = prism' BarB $ \case
 instance ToTypedSchema Bar where
   schema = named "Bar"
      $  tag _BarA (unnamed schema)
-    <|> tag _BarB (unnamed schema)
+     <> tag _BarB (unnamed schema)
 
-exampleBar :: Bar
-exampleBar = BarA (A "cthulhu" 711)
+exampleBarA :: Bar
+exampleBarA = BarA (A "cthulhu" 711)
 
-exampleBarJSON :: Value
-exampleBarJSON = [aesonQQ| {"thing": "cthulhu", "other": 711}|]
+exampleBarAJSON :: Value
+exampleBarAJSON = [aesonQQ| {"thing": "cthulhu", "other": 711} |]
+
+exampleBarB :: Bar
+exampleBarB = BarB (B 831)
+
+exampleBarBJSON :: Value
+exampleBarBJSON = [aesonQQ| {"b_thing": 831} |]

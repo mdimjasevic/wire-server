@@ -42,6 +42,12 @@ newtype SchemaIn v a b = SchemaIn (v -> A.Parser b)
   deriving (Applicative, Alternative) via (ReaderT v A.Parser)
   deriving (Profunctor, Choice) via Joker (ReaderT v A.Parser)
 
+instance Semigroup (SchemaIn v a b) where
+  (<>) = (<|>)
+
+instance Monoid (SchemaIn v a b) where
+  mempty = empty
+
 newtype SchemaOut v a b = SchemaOut (a -> Maybe v)
   deriving (Functor)
   deriving (Applicative) via (ReaderT a (Const (Ap Maybe v)))
@@ -57,12 +63,18 @@ newtype SchemaOut v a b = SchemaOut (a -> Maybe v)
 -- The following instance is correct because `Ap Maybe v` is a
 -- near-semiring when v is a monoid
 instance Monoid v => Alternative (SchemaOut v a) where
-  empty = SchemaOut $ pure empty
-  SchemaOut x1 <|> SchemaOut x2 = SchemaOut $ \a ->
+  empty = mempty
+  (<|>) = (<>)
+
+instance Semigroup (SchemaOut v a b) where
+  SchemaOut x1 <> SchemaOut x2 = SchemaOut $ \a ->
     x1 a <|> x2 a
 
+instance Monoid (SchemaOut v a b) where
+  mempty = SchemaOut (pure empty)
+
 newtype SchemaDoc doc a b = SchemaDoc doc
-  deriving (Functor)
+  deriving (Functor, Semigroup, Monoid)
   deriving (Applicative) via (Const doc)
   deriving (Profunctor, Choice) via Joker (Const doc)
 
@@ -91,6 +103,15 @@ instance (Monoid doc, Monoid v') => Alternative (SchemaP doc v v' a) where
   SchemaP d1 i1 o1 <|> SchemaP d2 i2 o2 =
     SchemaP (d1 <|> d2) (i1 <|> i2) (o1 <|> o2)
 
+-- /Note/: this is a more general instance than the 'Alternative' one,
+-- since it works for arbitrary v'
+instance Semigroup doc => Semigroup (SchemaP doc v v' a b) where
+  SchemaP d1 i1 o1 <> SchemaP d2 i2 o2 =
+    SchemaP (d1 <> d2) (i1 <> i2) (o1 <> o2)
+
+instance Monoid doc => Monoid (SchemaP doc v v' a b) where
+  mempty = SchemaP mempty mempty mempty
+
 instance Profunctor (SchemaP doc v v') where
   dimap f g (SchemaP d i o) =
     SchemaP (dimap f g d) (dimap f g i) (dimap f g o)
@@ -103,27 +124,7 @@ type SchemaP' doc v v' a = SchemaP doc v v' a a
 
 type ObjectSchema ss a = SchemaP' ss A.Object [A.Pair] a
 
-type ValueSchema ss a = SchemaP' ss A.Value ValueM a
-
--- | Monoid wrapper around a JSON value.
---
--- A.Null is the unit of the monoid, and v1 <> v2 is the first
--- non-null value of v1 and v2.
---
--- This is not a particularly meaningful instance, but it is
--- convenient to have at least /some/ monoid structure on JSON values,
--- so that 'Schema' can be an 'Applicative'. The 'Applicative'
--- structure of 'Schema' is not useful per se, but it is important to
--- get an 'Alternative' instance.
-newtype ValueM = ValueM {getValue :: A.Value}
-
-instance Semigroup ValueM where
-  ValueM v1 <> ValueM v2 = ValueM $ case v1 of
-    A.Null -> v2
-    _ -> v1
-
-instance Monoid ValueM where
-  mempty = ValueM A.Null
+type ValueSchema ss a = SchemaP' ss A.Value A.Value a
 
 schemaDoc :: SchemaP ss v m a b -> ss
 schemaDoc (SchemaP (SchemaDoc doc) _ _) = doc
@@ -140,7 +141,7 @@ field name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r obj = A.explicitParseField (schemaIn sch) obj name
     w x = do
-      v <- getValue <$> schemaOut sch x
+      v <- schemaOut sch x
       pure [name A..= v]
 
     s = mempty -- TODO
@@ -155,7 +156,7 @@ object :: Text -> ObjectSchema SwaggerDoc a -> ValueSchema NamedSwaggerDoc a
 object name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r = A.withObject (T.unpack name) (schemaIn sch)
-    w x = ValueM . A.object <$> schemaOut sch x
+    w x = A.object <$> schemaOut sch x
     s = setName name mempty -- TODO
 
 unnamed :: SchemaP NamedSwaggerDoc v m a b -> SchemaP SwaggerDoc v m a b
@@ -172,7 +173,7 @@ array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r = A.withArray (T.unpack name) $ \arr -> mapM (schemaIn sch) $ V.toList arr
     s = mempty
-    w x = ValueM . A.Array . V.fromList . map getValue <$> mapM (schemaOut sch) x
+    w x = A.Array . V.fromList <$> mapM (schemaOut sch) x
 
 type SwaggerDoc = Ap Declare S.Schema
 
@@ -197,7 +198,7 @@ instance ToTypedSchema a => S.ToSchema (TypedSchema a) where
   declareNamedSchema _ = getAp (schemaDoc (schema @a))
 
 typedSchemaToJSON :: forall a . ToTypedSchema a => a -> A.Value
-typedSchemaToJSON = getValue . fromMaybe mempty . schemaOut (schema @a)
+typedSchemaToJSON = fromMaybe A.Null . schemaOut (schema @a)
 
 instance ToTypedSchema a => A.ToJSON (TypedSchema a) where
   toJSON = typedSchemaToJSON . getTypedSchema
@@ -236,7 +237,7 @@ genericToTypedSchema =
     (SchemaOut w)
   where
     r = A.parseJSON
-    w = Just . ValueM . A.toJSON
+    w = Just . A.toJSON
 
 -- Examples
 
