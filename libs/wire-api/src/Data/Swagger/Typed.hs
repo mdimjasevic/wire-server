@@ -23,7 +23,7 @@ module Data.Swagger.Typed
 where
 
 import Control.Applicative
-import Control.Lens (Lens, Prism, lens, over, set)
+import Control.Lens (Lens, Prism, lens, over, set, (?~))
 import Control.Lens.Combinators (Choice (..), Profunctor (..))
 import qualified Data.Aeson.Types as A
 import Data.Bifunctor.Joker
@@ -35,6 +35,7 @@ import qualified Data.Swagger.Declare as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Imports hiding (Product)
+import Control.Lens (at)
 
 type Declare = S.Declare (S.Definitions S.Schema)
 
@@ -132,9 +133,9 @@ instance HasDoc (SchemaP doc v v' a b) (SchemaP doc' v v' a b) doc doc' where
 
 type SchemaP' doc v v' a = SchemaP doc v v' a a
 
-type ObjectSchema ss a = SchemaP' ss A.Object [A.Pair] a
+type ObjectSchema doc a = SchemaP' doc A.Object [A.Pair] a
 
-type ValueSchema ss a = SchemaP' ss A.Value A.Value a
+type ValueSchema doc a = SchemaP' doc A.Value A.Value a
 
 schemaDoc :: SchemaP ss v m a b -> ss
 schemaDoc (SchemaP (SchemaDoc d) _ _) = d
@@ -145,8 +146,7 @@ schemaIn (SchemaP _ (SchemaIn i) _) = i
 schemaOut :: SchemaP ss v m a b -> a -> Maybe m
 schemaOut (SchemaP _ _ (SchemaOut o)) = o
 
--- TODO: make this work with (Named ss) input as well
-field :: Monoid ss => Text -> ValueSchema ss a -> ObjectSchema ss a
+field :: HasField doc' doc => Text -> ValueSchema doc' a -> ObjectSchema doc a
 field name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r obj = A.explicitParseField (schemaIn sch) obj name
@@ -154,7 +154,7 @@ field name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
       v <- schemaOut sch x
       pure [name A..= v]
 
-    s = mempty -- TODO
+    s = mkField name (schemaDoc sch)
 
 (.=) :: Profunctor p => (a -> a') -> p a' b -> p a b
 (.=) = lmap
@@ -162,38 +162,80 @@ field name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
 tag :: Prism b b' a a' -> SchemaP ss v m a a' -> SchemaP ss v m b b'
 tag f = rmap runIdentity . f . rmap Identity
 
-object :: Text -> ObjectSchema SwaggerDoc a -> ValueSchema NamedSwaggerDoc a
+object :: HasObject doc doc' => Text -> ObjectSchema doc a -> ValueSchema doc' a
 object name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r = A.withObject (T.unpack name) (schemaIn sch)
     w x = A.object <$> schemaOut sch x
-    s = namedDoc name mempty -- TODO
+    s = mkObject name (schemaDoc sch)
 
 unnamed :: SchemaP NamedSwaggerDoc v m a b -> SchemaP SwaggerDoc v m a b
 unnamed = over doc unnamedDoc
 
-named :: Text -> SchemaP SwaggerDoc v m a b -> SchemaP NamedSwaggerDoc v m a b
-named name = over doc (namedDoc name)
+named :: HasObject doc doc' => Text -> SchemaP doc v m a b -> SchemaP doc' v m a b
+named name = over doc (mkObject name)
 
 -- FUTUREWORK: use the name in NamedSwaggerDoc somehow
-array :: Text -> ValueSchema NamedSwaggerDoc a -> ValueSchema SwaggerDoc [a]
+array :: HasArray ndoc doc => Text -> ValueSchema ndoc a -> ValueSchema doc [a]
 array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r = A.withArray (T.unpack name) $ \arr -> mapM (schemaIn sch) $ V.toList arr
-    s = mempty
+    s = mkArray (schemaDoc sch)
     w x = A.Array . V.fromList <$> mapM (schemaOut sch) x
 
 type SwaggerDoc = Ap Declare S.Schema
 
 type NamedSwaggerDoc = Ap Declare S.NamedSchema
 
-namedDoc :: Text -> SwaggerDoc -> NamedSwaggerDoc
-namedDoc name decl = S.NamedSchema (Just name) <$> decl
-
 unnamedDoc :: NamedSwaggerDoc -> SwaggerDoc
 unnamedDoc decl = do
   S.NamedSchema _ s <- decl
   pure s
+
+-- This class abstracts over SwaggerDoc and NamedSwaggerDoc
+class HasSchemaRef doc where
+  schemaRef :: doc -> Declare (S.Referenced S.Schema)
+
+instance HasSchemaRef SwaggerDoc where
+  schemaRef = getAp . fmap S.Inline
+
+instance HasSchemaRef NamedSwaggerDoc where
+  schemaRef tns = do
+    ns <- getAp tns
+    case ns of
+      S.NamedSchema (Just n) s -> do
+        S.declare [(n, s)]
+        pure (S.Ref (S.Reference n))
+      S.NamedSchema Nothing s ->
+        pure (S.Inline s)
+
+class Monoid doc => HasField ndoc doc | ndoc -> doc where
+  mkField :: Text -> ndoc -> doc
+
+class Monoid doc => HasObject doc ndoc | doc -> ndoc, ndoc -> doc where
+  mkObject :: Text -> doc -> ndoc
+
+class Monoid doc => HasArray ndoc doc | ndoc -> doc where
+  mkArray :: ndoc-> doc
+
+instance HasSchemaRef doc => HasField doc SwaggerDoc where
+  mkField name s = Ap $ do
+    ref <- schemaRef s
+    pure $
+      mempty
+        & S.type_ ?~ S.SwaggerObject
+        & S.properties . at name ?~ ref
+
+instance HasObject SwaggerDoc NamedSwaggerDoc where
+  mkObject name decl = S.NamedSchema (Just name) <$> decl
+
+instance HasSchemaRef doc => HasArray doc SwaggerDoc where
+  mkArray s = Ap $ do
+    ref <- schemaRef s
+    pure $
+      mempty
+        & S.type_ ?~ S.SwaggerArray
+        & S.items ?~ S.SwaggerItemsObject ref
 
 -- Newtype wrappers for deriving via
 
