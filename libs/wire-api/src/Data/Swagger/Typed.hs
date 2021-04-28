@@ -185,6 +185,10 @@ array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
 data WithDeclare s = WithDeclare (Declare ()) s
   deriving Functor
 
+declared :: Lens (WithDeclare s) (WithDeclare t) s t
+declared = lens (\(WithDeclare _ s) -> s) $ \(WithDeclare decl s) s' ->
+  WithDeclare decl s'
+
 instance Semigroup s => Semigroup (WithDeclare s) where
   WithDeclare d1 s1 <> WithDeclare d2 s2 =
     WithDeclare (d1 >> d2) (s1 <> s2)
@@ -301,3 +305,11 @@ genericToTypedSchema =
   where
     r = A.parseJSON
     w = Just . A.toJSON
+
+-- Swagger lenses
+
+instance S.HasDescription SwaggerDoc (Maybe Text) where
+  description = declared . S.description
+
+instance S.HasDescription NamedSwaggerDoc (Maybe Text) where
+  description = declared . S.schema . S.description
