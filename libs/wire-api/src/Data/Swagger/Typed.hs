@@ -16,6 +16,8 @@ module Data.Swagger.Typed
     unnamed,
     named,
     (.=),
+    typedSchemaToJSON,
+    typedSchemaParseJSON,
   )
 where
 
@@ -194,15 +196,17 @@ newtype TypedSchema a = TypedSchema {getTypedSchema :: a}
 instance ToTypedSchema a => S.ToSchema (TypedSchema a) where
   declareNamedSchema _ = getAp (schemaDoc (schema @a))
 
+typedSchemaToJSON :: forall a . ToTypedSchema a => a -> A.Value
+typedSchemaToJSON = getValue . fromMaybe mempty . schemaOut (schema @a)
+
 instance ToTypedSchema a => A.ToJSON (TypedSchema a) where
-  toJSON =
-    getValue
-      . fromMaybe mempty
-      . schemaOut (schema @a)
-      . getTypedSchema
+  toJSON = typedSchemaToJSON . getTypedSchema
+
+typedSchemaParseJSON :: forall a . ToTypedSchema a => A.Value -> A.Parser a
+typedSchemaParseJSON = schemaIn schema
 
 instance ToTypedSchema a => A.FromJSON (TypedSchema a) where
-  parseJSON = fmap TypedSchema . schemaIn (schema @a)
+  parseJSON = fmap TypedSchema . typedSchemaParseJSON
 
 instance ToTypedSchema Text where schema = genericToTypedSchema
 
