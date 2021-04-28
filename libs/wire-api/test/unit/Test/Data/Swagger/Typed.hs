@@ -4,7 +4,7 @@ module Test.Data.Swagger.Typed where
 
 import Control.Applicative
 import Control.Lens (Prism', prism')
-import Data.Aeson (FromJSON (..), Result (..), ToJSON (..), fromJSON)
+import Data.Aeson (FromJSON (..), Result (..), ToJSON (..), fromJSON, Value)
 import Data.Aeson.QQ
 import Data.Swagger.Typed
 import Imports
@@ -14,9 +14,9 @@ import Test.Tasty.HUnit
 tests :: TestTree
 tests = testGroup "Swagger.Typed"
   [ testFooToJSON
-  , testFooRoundtrip
+  , testFooFromJSON
   , testBarToJSON
-  , testBarRoundtrip
+  , testBarFromJSON
   ]
 
 testFooToJSON :: TestTree
@@ -24,35 +24,29 @@ testFooToJSON =
   testCase "toJSON Foo" $
     assertEqual
       "JSON should match handwritten JSON"
-      [aesonQQ|{ "a": {"thing": "a-thing", "other": 42},
-              "a_thing": "a-thing",
-              "b": {"b_thing": 99},
-              "str": "raw string"
-            }|]
+      exampleFooJSON
       (toJSON exampleFoo)
 
-testFooRoundtrip :: TestTree
-testFooRoundtrip =
-  testCase "roundtrip Foo" $
-    assertEqual
-      "fromJSON . toJSON == Success"
-      (fromJSON (toJSON exampleFoo))
-      (Success exampleFoo)
-
+testFooFromJSON :: TestTree
+testFooFromJSON = testCase "fromJSON Foo" $
+  assertEqual
+    "JSON should match handwritten JSON"
+    (Success exampleFoo)
+    (fromJSON exampleFooJSON)
 
 testBarToJSON :: TestTree
 testBarToJSON = testCase "toJSON Bar" $
   assertEqual
     "Bar: JSON should match handwritten JSON"
-    [aesonQQ| {"thing": "cthulhu", "other": 711}|]
+    exampleBarJSON
     (toJSON exampleBar)
 
-testBarRoundtrip :: TestTree
-testBarRoundtrip = testCase "roundtrip Bar" $
+testBarFromJSON :: TestTree
+testBarFromJSON = testCase "roundtrip Bar" $
   assertEqual
     "Bar: fromJSON . toJSON == Success"
-    (fromJSON (toJSON exampleBar))
     (Success exampleBar)
+    (fromJSON exampleBarJSON)
 
 data A = A {thing :: Text, other :: Int}
   deriving (Eq, Show)
@@ -76,6 +70,14 @@ data Foo = Foo {fooA :: A, fooB :: B, fooStr :: Text}
 
 exampleFoo :: Foo
 exampleFoo = Foo (A "a-thing" 42) (B 99) "raw string"
+
+exampleFooJSON :: Value
+exampleFooJSON =
+  [aesonQQ|{ "a": {"thing": "a-thing", "other": 42},
+          "a_thing": "a-thing",
+          "b": {"b_thing": 99},
+          "str": "raw string"
+        }|]
 
 instance ToTypedSchema Foo where
   schema =
@@ -107,3 +109,6 @@ instance ToTypedSchema Bar where
 
 exampleBar :: Bar
 exampleBar = BarA (A "cthulhu" 711)
+
+exampleBarJSON :: Value
+exampleBarJSON = [aesonQQ| {"thing": "cthulhu", "other": 711}|]
