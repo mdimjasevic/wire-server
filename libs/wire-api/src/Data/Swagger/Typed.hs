@@ -238,32 +238,3 @@ genericToTypedSchema =
   where
     r = A.parseJSON
     w = Just . A.toJSON
-
--- Examples
-
--- data A = A
--- data B = B
--- data X = X1 A | X2 B
-
--- makePrisms ''X
-
--- transformA :: A -> String
--- transformA _ = "something"
-
--- instance ToTypedSchema A where
---   schema = object "A" (pure A)
-
--- instance ToTypedSchema B where
---   schema = object "B" (pure B)
-
--- instance ToTypedSchema X where
---   schema = named "X" $ tag _X1 (unnamed schema) <|> tag _X2 (unnamed schema)
-
--- data R = R
---   { r1 :: A
---   , r2 :: B }
-
--- instance ToTypedSchema R where
---   schema = object "R" $ R
---     <$> lmap r1 (field "r1" (unnamed schema))
---     <*> lmap r2 (field "r2" (unnamed schema))
