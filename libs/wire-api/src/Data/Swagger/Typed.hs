@@ -9,6 +9,7 @@ module Data.Swagger.Typed
     ObjectSchema,
     ToTypedSchema (..),
     TypedSchema (..),
+    HasDoc (..),
     object,
     field,
     array,
@@ -22,7 +23,7 @@ module Data.Swagger.Typed
 where
 
 import Control.Applicative
-import Control.Lens (Prism)
+import Control.Lens (Lens, Prism, lens, over, set)
 import Control.Lens.Combinators (Choice (..), Profunctor (..))
 import qualified Data.Aeson.Types as A
 import Data.Bifunctor.Joker
@@ -73,7 +74,7 @@ instance Semigroup (SchemaOut v a b) where
 instance Monoid (SchemaOut v a b) where
   mempty = SchemaOut (pure empty)
 
-newtype SchemaDoc doc a b = SchemaDoc doc
+newtype SchemaDoc doc a b = SchemaDoc {getDoc :: doc}
   deriving (Functor, Semigroup, Monoid)
   deriving (Applicative) via (Const doc)
   deriving (Profunctor, Choice) via Joker (Const doc)
@@ -83,8 +84,14 @@ newtype SchemaDoc doc a b = SchemaDoc doc
 -- FUTUREWORK: introduce a NearSemiRing type class and replace the
 -- `Monoid doc` constraint with `NearSemiRing doc`.
 instance Monoid doc => Alternative (SchemaDoc doc a) where
-  empty = SchemaDoc mempty
-  SchemaDoc d1 <|> SchemaDoc d2 = SchemaDoc (d1 <> d2)
+  empty = mempty
+  (<|>) = (<>)
+
+class HasDoc a a' doc doc' | a a' -> doc doc' where
+  doc :: Lens a a' doc doc'
+
+instance HasDoc (SchemaDoc doc a b) (SchemaDoc doc' a b) doc doc' where
+  doc = lens getDoc $ \s d -> s {getDoc = d}
 
 data SchemaP doc v v' a b
   = SchemaP
@@ -120,6 +127,9 @@ instance Choice (SchemaP doc v v') where
   left' (SchemaP d i o) = SchemaP (left' d) (left' i) (left' o)
   right' (SchemaP d i o) = SchemaP (right' d) (right' i) (right' o)
 
+instance HasDoc (SchemaP doc v v' a b) (SchemaP doc' v v' a b) doc doc' where
+  doc = lens schemaDoc $ \(SchemaP d i o) d' -> SchemaP (set doc d' d) i o
+
 type SchemaP' doc v v' a = SchemaP doc v v' a a
 
 type ObjectSchema ss a = SchemaP' ss A.Object [A.Pair] a
@@ -127,7 +137,7 @@ type ObjectSchema ss a = SchemaP' ss A.Object [A.Pair] a
 type ValueSchema ss a = SchemaP' ss A.Value A.Value a
 
 schemaDoc :: SchemaP ss v m a b -> ss
-schemaDoc (SchemaP (SchemaDoc doc) _ _) = doc
+schemaDoc (SchemaP (SchemaDoc d) _ _) = d
 
 schemaIn :: SchemaP doc v v' a b -> v -> A.Parser b
 schemaIn (SchemaP _ (SchemaIn i) _) = i
@@ -157,15 +167,13 @@ object name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
     r = A.withObject (T.unpack name) (schemaIn sch)
     w x = A.object <$> schemaOut sch x
-    s = setName name mempty -- TODO
+    s = namedDoc name mempty -- TODO
 
 unnamed :: SchemaP NamedSwaggerDoc v m a b -> SchemaP SwaggerDoc v m a b
-unnamed (SchemaP (SchemaDoc doc) i o) =
-  SchemaP (SchemaDoc (unnamedDoc doc)) i o
+unnamed = over doc unnamedDoc
 
 named :: Text -> SchemaP SwaggerDoc v m a b -> SchemaP NamedSwaggerDoc v m a b
-named name (SchemaP (SchemaDoc doc) u v) =
-  SchemaP (SchemaDoc (setName name doc)) u v
+named name = over doc (namedDoc name)
 
 -- FUTUREWORK: use the name in NamedSwaggerDoc somehow
 array :: Text -> ValueSchema NamedSwaggerDoc a -> ValueSchema SwaggerDoc [a]
@@ -179,8 +187,8 @@ type SwaggerDoc = Ap Declare S.Schema
 
 type NamedSwaggerDoc = Ap Declare S.NamedSchema
 
-setName :: Text -> SwaggerDoc -> NamedSwaggerDoc
-setName name decl = S.NamedSchema (Just name) <$> decl
+namedDoc :: Text -> SwaggerDoc -> NamedSwaggerDoc
+namedDoc name decl = S.NamedSchema (Just name) <$> decl
 
 unnamedDoc :: NamedSwaggerDoc -> SwaggerDoc
 unnamedDoc decl = do
@@ -197,13 +205,13 @@ newtype TypedSchema a = TypedSchema {getTypedSchema :: a}
 instance ToTypedSchema a => S.ToSchema (TypedSchema a) where
   declareNamedSchema _ = getAp (schemaDoc (schema @a))
 
-typedSchemaToJSON :: forall a . ToTypedSchema a => a -> A.Value
+typedSchemaToJSON :: forall a. ToTypedSchema a => a -> A.Value
 typedSchemaToJSON = fromMaybe A.Null . schemaOut (schema @a)
 
 instance ToTypedSchema a => A.ToJSON (TypedSchema a) where
   toJSON = typedSchemaToJSON . getTypedSchema
 
-typedSchemaParseJSON :: forall a . ToTypedSchema a => A.Value -> A.Parser a
+typedSchemaParseJSON :: forall a. ToTypedSchema a => A.Value -> A.Parser a
 typedSchemaParseJSON = schemaIn schema
 
 instance ToTypedSchema a => A.FromJSON (TypedSchema a) where
