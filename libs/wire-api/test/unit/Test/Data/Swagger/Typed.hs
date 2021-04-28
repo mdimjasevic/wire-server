@@ -4,7 +4,7 @@ module Test.Data.Swagger.Typed where
 
 import Control.Applicative
 import Control.Lens (Prism', prism')
-import Data.Aeson (FromJSON (..), Result (..), ToJSON (..), fromJSON, Value)
+import Data.Aeson (FromJSON (..), Result (..), ToJSON (..), Value, fromJSON)
 import Data.Aeson.QQ
 import Data.Swagger.Typed
 import Imports
@@ -12,14 +12,16 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 tests :: TestTree
-tests = testGroup "Swagger.Typed"
-  [ testFooToJSON
-  , testFooFromJSON
-  , testBarAToJSON
-  , testBarAFromJSON
-  , testBarBToJSON
-  , testBarBFromJSON
-  ]
+tests =
+  testGroup
+    "Swagger.Typed"
+    [ testFooToJSON,
+      testFooFromJSON,
+      testBarAToJSON,
+      testBarAFromJSON,
+      testBarBToJSON,
+      testBarBFromJSON
+    ]
 
 testFooToJSON :: TestTree
 testFooToJSON =
@@ -30,39 +32,44 @@ testFooToJSON =
       (toJSON exampleFoo)
 
 testFooFromJSON :: TestTree
-testFooFromJSON = testCase "fromJSON Foo" $
-  assertEqual
-    "JSON should match handwritten JSON"
-    (Success exampleFoo)
-    (fromJSON exampleFooJSON)
+testFooFromJSON =
+  testCase "fromJSON Foo" $
+    assertEqual
+      "JSON should match handwritten JSON"
+      (Success exampleFoo)
+      (fromJSON exampleFooJSON)
 
 testBarAToJSON :: TestTree
-testBarAToJSON = testCase "toJSON BarA" $
-  assertEqual
-    "Bar: JSON should match handwritten JSON"
-    exampleBarAJSON
-    (toJSON exampleBarA)
+testBarAToJSON =
+  testCase "toJSON BarA" $
+    assertEqual
+      "Bar: JSON should match handwritten JSON"
+      exampleBarAJSON
+      (toJSON exampleBarA)
 
 testBarAFromJSON :: TestTree
-testBarAFromJSON = testCase "fromJSON BarA" $
-  assertEqual
-    "Bar: fromJSON . toJSON == Success"
-    (Success exampleBarA)
-    (fromJSON exampleBarAJSON)
+testBarAFromJSON =
+  testCase "fromJSON BarA" $
+    assertEqual
+      "Bar: fromJSON . toJSON == Success"
+      (Success exampleBarA)
+      (fromJSON exampleBarAJSON)
 
 testBarBToJSON :: TestTree
-testBarBToJSON = testCase "toJSON BarB" $
-  assertEqual
-    "Bar: JSON should match handwritten JSON"
-    exampleBarBJSON
-    (toJSON exampleBarB)
+testBarBToJSON =
+  testCase "toJSON BarB" $
+    assertEqual
+      "Bar: JSON should match handwritten JSON"
+      exampleBarBJSON
+      (toJSON exampleBarB)
 
 testBarBFromJSON :: TestTree
-testBarBFromJSON = testCase "fromJSON BarB" $
-  assertEqual
-    "Bar: fromJSON . toJSON == Success"
-    (Success exampleBarB)
-    (fromJSON exampleBarBJSON)
+testBarBFromJSON =
+  testCase "fromJSON BarB" $
+    assertEqual
+      "Bar: fromJSON . toJSON == Success"
+      (Success exampleBarB)
+      (fromJSON exampleBarBJSON)
 
 data A = A {thing :: Text, other :: Int}
   deriving (Eq, Show)
@@ -119,9 +126,10 @@ _BarB = prism' BarB $ \case
   _ -> Nothing
 
 instance ToTypedSchema Bar where
-  schema = named "Bar"
-     $  tag _BarA (unnamed schema)
-     <> tag _BarB (unnamed schema)
+  schema =
+    named "Bar" $
+      tag _BarA (unnamed schema)
+        <> tag _BarB (unnamed schema)
 
 exampleBarA :: Bar
 exampleBarA = BarA (A "cthulhu" 711)
