@@ -168,8 +168,8 @@ object name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
     w x = A.object <$> schemaOut sch x
     s = mkObject name (schemaDoc sch)
 
-unnamed :: SchemaP NamedSwaggerDoc v m a b -> SchemaP SwaggerDoc v m a b
-unnamed = over doc unnamedDoc
+unnamed :: HasObject doc doc' => SchemaP doc' v m a b -> SchemaP doc v m a b
+unnamed = over doc unmkObject
 
 named :: HasObject doc doc' => Text -> SchemaP doc v m a b -> SchemaP doc' v m a b
 named name = over doc (mkObject name)
@@ -203,9 +203,6 @@ unrunDeclare decl = case S.runDeclare decl mempty of
 type SwaggerDoc = WithDeclare S.Schema
 type NamedSwaggerDoc = WithDeclare S.NamedSchema
 
-unnamedDoc :: NamedSwaggerDoc -> SwaggerDoc
-unnamedDoc = fmap S._namedSchemaSchema
-
 -- This class abstracts over SwaggerDoc and NamedSwaggerDoc
 class HasSchemaRef doc where
   schemaRef :: doc -> WithDeclare (S.Referenced S.Schema)
@@ -229,6 +226,7 @@ class Monoid doc => HasField ndoc doc | ndoc -> doc where
 
 class Monoid doc => HasObject doc ndoc | doc -> ndoc, ndoc -> doc where
   mkObject :: Text -> doc -> ndoc
+  unmkObject :: ndoc -> doc
 
 class Monoid doc => HasArray ndoc doc | ndoc -> doc where
   mkArray :: ndoc-> doc
@@ -242,6 +240,8 @@ instance HasSchemaRef doc => HasField doc SwaggerDoc where
 
 instance HasObject SwaggerDoc NamedSwaggerDoc where
   mkObject name decl = S.NamedSchema (Just name) <$> decl
+  unmkObject = fmap S._namedSchemaSchema
+
 
 instance HasSchemaRef doc => HasArray doc SwaggerDoc where
   mkArray = fmap f . schemaRef
