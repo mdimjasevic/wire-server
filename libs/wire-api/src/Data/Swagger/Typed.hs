@@ -23,7 +23,7 @@ module Data.Swagger.Typed
 where
 
 import Control.Applicative
-import Control.Lens (Lens, Prism, lens, over, set, (?~))
+import Control.Lens (Lens, Prism, lens, over, set, (?~), at)
 import Control.Lens.Combinators (Choice (..), Profunctor (..))
 import qualified Data.Aeson.Types as A
 import Data.Bifunctor.Joker
@@ -35,7 +35,6 @@ import qualified Data.Swagger.Declare as S
 import qualified Data.Text as T
 import qualified Data.Vector as V
 import Imports hiding (Product)
-import Control.Lens (at)
 
 type Declare = S.Declare (S.Definitions S.Schema)
 
@@ -183,31 +182,47 @@ array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
     s = mkArray (schemaDoc sch)
     w x = A.Array . V.fromList <$> mapM (schemaOut sch) x
 
-type SwaggerDoc = Ap Declare S.Schema
+data WithDeclare s = WithDeclare (Declare ()) s
+  deriving Functor
 
-type NamedSwaggerDoc = Ap Declare S.NamedSchema
+instance Semigroup s => Semigroup (WithDeclare s) where
+  WithDeclare d1 s1 <> WithDeclare d2 s2 =
+    WithDeclare (d1 >> d2) (s1 <> s2)
+
+instance Monoid s => Monoid (WithDeclare s) where
+  mempty = WithDeclare (pure ()) mempty
+
+runDeclare :: WithDeclare s -> Declare s
+runDeclare (WithDeclare m s) = s <$ m
+
+unrunDeclare :: Declare s -> WithDeclare s
+unrunDeclare decl = case S.runDeclare decl mempty of
+  (defns, s) -> (`WithDeclare` s) $ do
+    S.declare defns
+
+type SwaggerDoc = WithDeclare S.Schema
+type NamedSwaggerDoc = WithDeclare S.NamedSchema
 
 unnamedDoc :: NamedSwaggerDoc -> SwaggerDoc
-unnamedDoc decl = do
-  S.NamedSchema _ s <- decl
-  pure s
+unnamedDoc = fmap S._namedSchemaSchema
 
 -- This class abstracts over SwaggerDoc and NamedSwaggerDoc
 class HasSchemaRef doc where
-  schemaRef :: doc -> Declare (S.Referenced S.Schema)
+  schemaRef :: doc -> WithDeclare (S.Referenced S.Schema)
 
 instance HasSchemaRef SwaggerDoc where
-  schemaRef = getAp . fmap S.Inline
+  schemaRef = fmap S.Inline
 
 instance HasSchemaRef NamedSwaggerDoc where
-  schemaRef tns = do
-    ns <- getAp tns
-    case ns of
-      S.NamedSchema (Just n) s -> do
-        S.declare [(n, s)]
-        pure (S.Ref (S.Reference n))
-      S.NamedSchema Nothing s ->
-        pure (S.Inline s)
+  schemaRef (WithDeclare decl (S.NamedSchema mn s)) =
+    (`WithDeclare` mkRef s mn) $ do
+      decl
+      case mn of
+        Just n -> S.declare [(n, s)]
+        Nothing -> pure ()
+      where
+        mkRef _ (Just n) = S.Ref (S.Reference n)
+        mkRef x Nothing = S.Inline x
 
 class Monoid doc => HasField ndoc doc | ndoc -> doc where
   mkField :: Text -> ndoc -> doc
@@ -219,10 +234,9 @@ class Monoid doc => HasArray ndoc doc | ndoc -> doc where
   mkArray :: ndoc-> doc
 
 instance HasSchemaRef doc => HasField doc SwaggerDoc where
-  mkField name s = Ap $ do
-    ref <- schemaRef s
-    pure $
-      mempty
+  mkField name = fmap f . schemaRef
+    where
+      f ref = mempty
         & S.type_ ?~ S.SwaggerObject
         & S.properties . at name ?~ ref
 
@@ -230,10 +244,9 @@ instance HasObject SwaggerDoc NamedSwaggerDoc where
   mkObject name decl = S.NamedSchema (Just name) <$> decl
 
 instance HasSchemaRef doc => HasArray doc SwaggerDoc where
-  mkArray s = Ap $ do
-    ref <- schemaRef s
-    pure $
-      mempty
+  mkArray = fmap f . schemaRef
+    where
+      f ref = mempty
         & S.type_ ?~ S.SwaggerArray
         & S.items ?~ S.SwaggerItemsObject ref
 
@@ -245,7 +258,7 @@ class ToTypedSchema a where
 newtype TypedSchema a = TypedSchema {getTypedSchema :: a}
 
 instance ToTypedSchema a => S.ToSchema (TypedSchema a) where
-  declareNamedSchema _ = getAp (schemaDoc (schema @a))
+  declareNamedSchema _ = runDeclare (schemaDoc (schema @a))
 
 typedSchemaToJSON :: forall a. ToTypedSchema a => a -> A.Value
 typedSchemaToJSON = fromMaybe A.Null . schemaOut (schema @a)
@@ -282,7 +295,7 @@ instance ToTypedSchema String where schema = genericToTypedSchema
 genericToTypedSchema :: forall a. (S.ToSchema a, A.ToJSON a, A.FromJSON a) => ValueSchema NamedSwaggerDoc a
 genericToTypedSchema =
   SchemaP
-    (SchemaDoc (Ap (S.declareNamedSchema (Proxy @a))))
+    (SchemaDoc (unrunDeclare (S.declareNamedSchema (Proxy @a))))
     (SchemaIn r)
     (SchemaOut w)
   where
