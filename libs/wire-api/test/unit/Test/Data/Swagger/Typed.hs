@@ -3,6 +3,7 @@
 module Test.Data.Swagger.Typed where
 
 import Control.Applicative
+import Control.Lens (Prism', prism')
 import Data.Aeson (FromJSON (..), Result (..), ToJSON (..), fromJSON)
 import Data.Aeson.QQ
 import Data.Swagger.Typed
@@ -11,10 +12,15 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 tests :: TestTree
-tests = testGroup "Swagger.Typed" [testToJSON, testFromJSON]
+tests = testGroup "Swagger.Typed"
+  [ testFooToJSON
+  , testFooRoundtrip
+  , testBarToJSON
+  , testBarRoundtrip
+  ]
 
-testToJSON :: TestTree
-testToJSON =
+testFooToJSON :: TestTree
+testFooToJSON =
   testCase "toJSON Foo" $
     assertEqual
       "JSON should match handwritten JSON"
@@ -25,13 +31,28 @@ testToJSON =
             }|]
       (toJSON exampleFoo)
 
-testFromJSON :: TestTree
-testFromJSON =
-  testCase "fromJSON Foo" $
+testFooRoundtrip :: TestTree
+testFooRoundtrip =
+  testCase "roundtrip Foo" $
     assertEqual
-      "JSON roundtrip"
+      "fromJSON . toJSON == Success"
       (fromJSON (toJSON exampleFoo))
       (Success exampleFoo)
+
+
+testBarToJSON :: TestTree
+testBarToJSON = testCase "toJSON Bar" $
+  assertEqual
+    "Bar: JSON should match handwritten JSON"
+    [aesonQQ| {"thing": "cthulhu", "other": 711}|]
+    (toJSON exampleBar)
+
+testBarRoundtrip :: TestTree
+testBarRoundtrip = testCase "roundtrip Bar" $
+  assertEqual
+    "Bar: fromJSON . toJSON == Success"
+    (fromJSON (toJSON exampleBar))
+    (Success exampleBar)
 
 data A = A {thing :: Text, other :: Int}
   deriving (Eq, Show)
@@ -64,3 +85,25 @@ instance ToTypedSchema Foo where
         <* (thing . fooA) .= optional (field "a_thing" (unnamed schema))
         <*> fooB .= field "b" (unnamed schema)
         <*> fooStr .= field "str" (unnamed schema)
+
+data Bar = BarA A | BarB B
+  deriving (Eq, Show)
+  deriving (ToJSON, FromJSON) via TypedSchema Bar
+
+_BarA :: Prism' Bar A
+_BarA = prism' BarA $ \case
+  BarA a -> Just a
+  _ -> Nothing
+
+_BarB :: Prism' Bar B
+_BarB = prism' BarB $ \case
+  BarB b -> Just b
+  _ -> Nothing
+
+instance ToTypedSchema Bar where
+  schema = named "Bar"
+     $  tag _BarA (unnamed schema)
+    <|> tag _BarB (unnamed schema)
+
+exampleBar :: Bar
+exampleBar = BarA (A "cthulhu" 711)
