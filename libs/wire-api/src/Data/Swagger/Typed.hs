@@ -95,6 +95,48 @@ class HasDoc a a' doc doc' | a a' -> doc doc' where
 instance HasDoc (SchemaDoc doc a b) (SchemaDoc doc' a b) doc doc' where
   doc = lens getDoc $ \s d -> s {getDoc = d}
 
+-- | A combined JSON encoder-decoder with associated documentation.
+--
+-- A value of type 'SchemaP d v w a b', which we will refer to as a
+-- /schema/, contains both a JSON parser and a JSON serialiser,
+-- together with documentation-like metadata, such as a JSON or
+-- Swagger schema.
+--
+-- The type variables are as follows:
+--
+--   [@d@] documentation type, usually a 'Monoid'.
+--   [@v@] type of JSON values being parsed (e.g. 'A.Value').
+--   [@w@] type of JSON values being serialised (e.g. 'A.Value').
+--   [@a@] input type
+--   [@b@] output type
+--
+-- Input and output types deserve some more explanation. We can think
+-- of a value @sch@ of type 'SchemaP d v w a b' as a kind of special
+-- "function" from @a@ to @b@, but where @a@ and @b@ might potentially
+-- live in different "languages". The parser portion of @sch@ takes a
+-- JSON-encoded value of type @a@ and produces a value of type @b@,
+-- while the serialiser portion of @sch@ takes a haskell value of type
+-- @a@ and produces a JSON-encoding of something of type @b@.
+--
+-- In terms of composability, this way of representing schemas (based
+-- on input and output types) is superior to the perhaps more natural
+-- approach of using "bidirectional functions" or isomorphisms (based
+-- on a single type parameter).
+--
+-- Although schemas cannot be composed as functions (i.e. they do not
+-- form a 'Category'), they still admit a number of important and
+-- useful instances, such as 'Profunctor' (and specifically 'Choice'),
+-- which makes it possible to use prism quite effectively to build
+-- schema values.
+--
+-- Using type variables to represent JSON types might seem like
+-- excessive generality, but it is useful to represent "intermediate"
+-- schemas arising when building complex ones. For example, a schema
+-- which is able to work with fields of a JSON object (see 'field')
+-- should not output full-blown objects, but only lists of pairs, so
+-- that they can be combined correctly via the usual 'Monoid'
+-- structure of lists when using the 'Applicative' interface of
+-- 'SchemaP d v w a b'.
 data SchemaP doc v v' a b
   = SchemaP
       (SchemaDoc doc a b)
@@ -149,6 +191,7 @@ schemaIn (SchemaP _ (SchemaIn i) _) = i
 schemaOut :: SchemaP ss v m a b -> a -> Maybe m
 schemaOut (SchemaP _ _ (SchemaOut o)) = o
 
+-- | A schema for a one-field JSON object.
 field :: HasField doc' doc => Text -> ValueSchema doc' a -> ObjectSchema doc a
 field name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
@@ -159,12 +202,18 @@ field name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
 
     s = mkField name (schemaDoc sch)
 
+-- | Change the input type of a schema.
 (.=) :: Profunctor p => (a -> a') -> p a' b -> p a b
 (.=) = lmap
 
+-- | Change the input and output types of a schema via a prism.
 tag :: Prism b b' a a' -> SchemaP ss v m a a' -> SchemaP ss v m b b'
 tag f = rmap runIdentity . f . rmap Identity
 
+-- | A schema for a JSON object.
+--
+-- This can be used to convert a combination of schemas obtained using
+-- 'field' into a single schema for a JSON object.
 object :: HasObject doc doc' => Text -> ObjectSchema doc a -> ValueSchema doc' a
 object name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
@@ -172,15 +221,26 @@ object name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
     w x = A.object <$> schemaOut sch x
     s = mkObject name (schemaDoc sch)
 
+-- | Turn a named schema into an unnamed one.
+--
+-- This is mostly useful when using a schema as a field of a bigger
+-- schema. If the inner schema is unnamed, it gets "inlined" in the
+-- larger scheme definition, and otherwise it gets "referenced". This
+-- combinator makes it possible to choose one of the two options.
 unnamed :: HasObject doc doc' => SchemaP doc' v m a b -> SchemaP doc v m a b
 unnamed = over doc unmkObject
 
+-- | Attach a name to a schema.
+--
+-- This only affects the documentation portion of a schema, and not
+-- the parsing or serialisation.
 named :: HasObject doc doc' => Text -> SchemaP doc v m a b -> SchemaP doc' v m a b
 named name = over doc (mkObject name)
 
--- FUTUREWORK: use the name in NamedSwaggerDoc
+-- | A schema for a JSON array.
 array :: HasArray ndoc doc => Text -> ValueSchema ndoc a -> ValueSchema doc [a]
 array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
+-- FUTUREWORK: use the name in NamedSwaggerDoc
   where
     r = A.withArray (T.unpack name) $ \arr -> mapM (schemaIn sch) $ V.toList arr
     s = mkArray (schemaDoc sch)
@@ -193,6 +253,9 @@ array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
 --     s = mkEnum (map fst alts)
 --     w x = asum (map (($ x) . schemaOut . snd) alts)
 
+-- | A schema for a single value of an enumeration.
+--
+-- At the moment, only strings are supported.
 element :: Eq a => Text -> a -> EnumSchema [Text] a
 element label value = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
   where
@@ -200,9 +263,13 @@ element label value = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
     i l = value <$ guard (label == l)
     o v = Alt (Just label) <$ guard (value == v)
 
--- FUTUREWORK: use the name in NamedSwaggerDoc
+-- | A schema for a JSON enumeration.
+--
+-- This is used to convert a combination of schemas obtained using
+-- 'element' into a single schema for a JSON string.
 enum :: HasEnum doc => Text -> EnumSchema [Text] a -> ValueSchema doc a
 enum name sch = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
+-- FUTUREWORK: use the name in NamedSwaggerDoc
   where
     d = mkEnum (schemaDoc sch)
     i x =  A.withText (T.unpack name) (schemaIn sch) x
@@ -296,6 +363,13 @@ instance HasEnum SwaggerDoc where
 
 -- Newtype wrappers for deriving via
 
+
+-- | A type with a canonical typed schema definition.
+--
+-- Using ToTypedSchema, one can split a complicated shema definition
+-- into manageable parts by defining instances for the various types
+-- involved, and using the 'schema' method to reuse the
+-- previously-defined schema definitions for component types.
 class ToTypedSchema a where
   schema :: ValueSchema NamedSwaggerDoc a
 
@@ -304,12 +378,14 @@ newtype TypedSchema a = TypedSchema {getTypedSchema :: a}
 instance ToTypedSchema a => S.ToSchema (TypedSchema a) where
   declareNamedSchema _ = runDeclare (schemaDoc (schema @a))
 
+-- | JSON serialiser for an instance of 'ToTypedSchema'.
 typedSchemaToJSON :: forall a. ToTypedSchema a => a -> A.Value
 typedSchemaToJSON = fromMaybe A.Null . schemaOut (schema @a)
 
 instance ToTypedSchema a => A.ToJSON (TypedSchema a) where
   toJSON = typedSchemaToJSON . getTypedSchema
 
+-- | JSON parser for an instance of 'ToTypedSchema'.
 typedSchemaParseJSON :: forall a. ToTypedSchema a => A.Value -> A.Parser a
 typedSchemaParseJSON = schemaIn schema
 

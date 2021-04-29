@@ -103,7 +103,7 @@ newtype B = B {bThing :: Int}
   deriving (Eq, Show)
 
 instance ToTypedSchema B where
-  schema = object "B" $ B <$> bThing .= field "b_thing" (unnamed schema)
+  schema = object "B" $ B <$> bThing .= field "b_thing" schema
 
 data Foo = Foo {fooA :: A, fooB :: B, fooStr :: Text}
   deriving stock (Eq, Show)
@@ -124,9 +124,9 @@ instance ToTypedSchema Foo where
   schema =
     object "Foo" $
       Foo
-        <$> fooA .= field "a" (unnamed schema)
+        <$> fooA .= field "a" schema
         <* (thing . fooA) .= optional (field "a_thing" (unnamed schema))
-        <*> fooB .= field "b" (unnamed schema)
+        <*> fooB .= field "b" schema
         <*> fooStr .= field "str" (unnamed schema)
 
 data Bar = BarA A | BarB B
