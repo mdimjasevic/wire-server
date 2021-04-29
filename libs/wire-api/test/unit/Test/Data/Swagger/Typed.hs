@@ -166,7 +166,7 @@ data Access = Public | Private | Link | Code
   deriving (ToJSON, FromJSON) via TypedSchema Access
 
 instance ToTypedSchema Access where
-  schema = named "Access" $ enum "Access" $
+  schema = enum "Access" $
        element "public" Public
     <> element "private" Private
     <> element "link" Link

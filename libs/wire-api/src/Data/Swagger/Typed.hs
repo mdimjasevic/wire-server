@@ -25,6 +25,7 @@ module Data.Swagger.Typed
 where
 
 import Control.Applicative
+import Control.Comonad
 import Control.Lens (Lens, Prism, lens, over, set, (?~), at)
 import Control.Lens.Combinators (Choice (..), Profunctor (..))
 import qualified Data.Aeson.Types as A
@@ -238,20 +239,14 @@ named :: HasObject doc doc' => Text -> SchemaP doc v m a b -> SchemaP doc' v m a
 named name = over doc (mkObject name)
 
 -- | A schema for a JSON array.
-array :: HasArray ndoc doc => Text -> ValueSchema ndoc a -> ValueSchema doc [a]
-array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
--- FUTUREWORK: use the name in NamedSwaggerDoc
+array :: (HasArray ndoc doc, HasName ndoc)
+      => ValueSchema ndoc a -> ValueSchema doc [a]
+array sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
+    name = maybe "array" ("array of " <>) (getName (schemaDoc sch))
     r = A.withArray (T.unpack name) $ \arr -> mapM (schemaIn sch) $ V.toList arr
     s = mkArray (schemaDoc sch)
     w x = A.Array . V.fromList <$> mapM (schemaOut sch) x
-
--- enum :: HasEnum doc => [(A.Value, a)] -> ValueSchema doc a
--- enum alts = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
---   where
---     r val = asum (map (\(v, sch) -> guard (v == val) *> schemaIn sch v) alts)
---     s = mkEnum (map fst alts)
---     w x = asum (map (($ x) . schemaOut . snd) alts)
 
 -- | A schema for a single value of an enumeration.
 --
@@ -269,15 +264,18 @@ element label value = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
 -- 'element' into a single schema for a JSON string.
 enum :: HasEnum doc => Text -> EnumSchema [Text] a -> ValueSchema doc a
 enum name sch = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
--- FUTUREWORK: use the name in NamedSwaggerDoc
   where
-    d = mkEnum (schemaDoc sch)
+    d = mkEnum name (schemaDoc sch)
     i x =  A.withText (T.unpack name) (schemaIn sch) x
        <|> fail ("Unexpected value for enum " <> T.unpack name)
     o = fmap A.toJSON . (getAlt <=< schemaOut sch)
 
 data WithDeclare s = WithDeclare (Declare ()) s
   deriving Functor
+
+instance Comonad WithDeclare where
+  extract (WithDeclare _ s) = s
+  duplicate w@(WithDeclare d _) = WithDeclare d w
 
 declared :: Lens (WithDeclare s) (WithDeclare t) s t
 declared = lens (\(WithDeclare _ s) -> s) $ \(WithDeclare decl _) s' ->
@@ -324,6 +322,15 @@ instance HasSchemaRef NamedSwaggerDoc where
         mkRef _ (Just n) = S.Ref (S.Reference n)
         mkRef x Nothing = S.Inline x
 
+class HasName doc where
+  getName :: doc -> Maybe Text
+
+instance HasName SwaggerDoc where
+  getName = const Nothing
+
+instance HasName NamedSwaggerDoc where
+  getName = S._namedSchemaName . extract
+
 class Monoid doc => HasField ndoc doc | ndoc -> doc where
   mkField :: Text -> ndoc -> doc
 
@@ -334,8 +341,8 @@ class Monoid doc => HasObject doc ndoc | doc -> ndoc, ndoc -> doc where
 class Monoid doc => HasArray ndoc doc | ndoc -> doc where
   mkArray :: ndoc-> doc
 
-class Monoid doc => HasEnum doc where
-  mkEnum :: [Text] -> doc
+class HasEnum doc where
+  mkEnum :: Text -> [Text] -> doc
 
 instance HasSchemaRef doc => HasField doc SwaggerDoc where
   mkField name = fmap f . schemaRef
@@ -355,8 +362,8 @@ instance HasSchemaRef doc => HasArray doc SwaggerDoc where
         & S.type_ ?~ S.SwaggerArray
         & S.items ?~ S.SwaggerItemsObject ref
 
-instance HasEnum SwaggerDoc where
-  mkEnum labels = pure $
+instance HasEnum NamedSwaggerDoc where
+  mkEnum name labels = pure . S.NamedSchema (Just name) $
     mempty
       & S.type_ ?~ S.SwaggerString
       & S.enum_ ?~ map A.toJSON labels

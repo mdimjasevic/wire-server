@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 465155200be212a3b3763a46622cfc616ab9498f6b337d1d47fbe3473cf8cc3f
+-- hash: b6b3a34ceb3d5ab0126a81cdbd71abfd1982806fe4f9389e711334439175623e
 
 name:           wire-api
 version:        0.1.0
@@ -90,6 +90,7 @@ library
     , case-insensitive
     , cassandra-util
     , cassava >=0.5
+    , comonad
     , containers >=0.5
     , currency-codes >=2.0
     , deriving-aeson >=0.2

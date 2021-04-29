@@ -26,6 +26,7 @@ library:
   - case-insensitive
   - cassandra-util
   - cassava >= 0.5
+  - comonad
   - currency-codes >=2.0
   - deriving-aeson >=0.2
   - deriving-swagger2
