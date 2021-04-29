@@ -13,6 +13,8 @@ module Data.Swagger.Typed
     object,
     field,
     array,
+    enum,
+    element,
     tag,
     unnamed,
     named,
@@ -136,6 +138,8 @@ type ObjectSchema doc a = SchemaP' doc A.Object [A.Pair] a
 
 type ValueSchema doc a = SchemaP' doc A.Value A.Value a
 
+type EnumSchema doc a = SchemaP' doc Text (Alt Maybe Text) a
+
 schemaDoc :: SchemaP ss v m a b -> ss
 schemaDoc (SchemaP (SchemaDoc d) _ _) = d
 
@@ -174,7 +178,7 @@ unnamed = over doc unmkObject
 named :: HasObject doc doc' => Text -> SchemaP doc v m a b -> SchemaP doc' v m a b
 named name = over doc (mkObject name)
 
--- FUTUREWORK: use the name in NamedSwaggerDoc somehow
+-- FUTUREWORK: use the name in NamedSwaggerDoc
 array :: HasArray ndoc doc => Text -> ValueSchema ndoc a -> ValueSchema doc [a]
 array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
   where
@@ -182,12 +186,40 @@ array name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
     s = mkArray (schemaDoc sch)
     w x = A.Array . V.fromList <$> mapM (schemaOut sch) x
 
+-- enum :: HasEnum doc => [(A.Value, a)] -> ValueSchema doc a
+-- enum alts = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
+--   where
+--     r val = asum (map (\(v, sch) -> guard (v == val) *> schemaIn sch v) alts)
+--     s = mkEnum (map fst alts)
+--     w x = asum (map (($ x) . schemaOut . snd) alts)
+
+element :: Eq a => Text -> a -> EnumSchema [Text] a
+element label value = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
+  where
+    d = [label]
+    i l = value <$ guard (label == l)
+    o v = Alt (Just label) <$ guard (value == v)
+
+-- FUTUREWORK: use the name in NamedSwaggerDoc
+enum :: HasEnum doc => Text -> EnumSchema [Text] a -> ValueSchema doc a
+enum name sch = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
+  where
+    d = mkEnum (schemaDoc sch)
+    i x =  A.withText (T.unpack name) (schemaIn sch) x
+       <|> fail ("Unexpected value for enum " <> T.unpack name)
+    o = fmap A.toJSON . (getAlt <=< schemaOut sch)
+
 data WithDeclare s = WithDeclare (Declare ()) s
   deriving Functor
 
 declared :: Lens (WithDeclare s) (WithDeclare t) s t
-declared = lens (\(WithDeclare _ s) -> s) $ \(WithDeclare decl s) s' ->
+declared = lens (\(WithDeclare _ s) -> s) $ \(WithDeclare decl _) s' ->
   WithDeclare decl s'
+
+instance Applicative WithDeclare where
+  pure = WithDeclare (pure ())
+  WithDeclare d1 s1 <*> WithDeclare d2 s2 =
+    WithDeclare (d1 >> d2) (s1 s2)
 
 instance Semigroup s => Semigroup (WithDeclare s) where
   WithDeclare d1 s1 <> WithDeclare d2 s2 =
@@ -235,6 +267,9 @@ class Monoid doc => HasObject doc ndoc | doc -> ndoc, ndoc -> doc where
 class Monoid doc => HasArray ndoc doc | ndoc -> doc where
   mkArray :: ndoc-> doc
 
+class Monoid doc => HasEnum doc where
+  mkEnum :: [Text] -> doc
+
 instance HasSchemaRef doc => HasField doc SwaggerDoc where
   mkField name = fmap f . schemaRef
     where
@@ -246,13 +281,18 @@ instance HasObject SwaggerDoc NamedSwaggerDoc where
   mkObject name decl = S.NamedSchema (Just name) <$> decl
   unmkObject = fmap S._namedSchemaSchema
 
-
 instance HasSchemaRef doc => HasArray doc SwaggerDoc where
   mkArray = fmap f . schemaRef
     where
       f ref = mempty
         & S.type_ ?~ S.SwaggerArray
         & S.items ?~ S.SwaggerItemsObject ref
+
+instance HasEnum SwaggerDoc where
+  mkEnum labels = pure $
+    mempty
+      & S.type_ ?~ S.SwaggerString
+      & S.enum_ ?~ map A.toJSON labels
 
 -- Newtype wrappers for deriving via
 

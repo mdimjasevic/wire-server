@@ -20,14 +20,16 @@ tests =
       testBarAToJSON,
       testBarAFromJSON,
       testBarBToJSON,
-      testBarBFromJSON
+      testBarBFromJSON,
+      testAccessToJSON,
+      testAccessFromJSON
     ]
 
 testFooToJSON :: TestTree
 testFooToJSON =
   testCase "toJSON Foo" $
     assertEqual
-      "JSON should match handwritten JSON"
+      "toJSON should match handwritten JSON"
       exampleFooJSON
       (toJSON exampleFoo)
 
@@ -35,7 +37,7 @@ testFooFromJSON :: TestTree
 testFooFromJSON =
   testCase "fromJSON Foo" $
     assertEqual
-      "JSON should match handwritten JSON"
+      "toJSON should match handwritten JSON"
       (Success exampleFoo)
       (fromJSON exampleFooJSON)
 
@@ -43,7 +45,7 @@ testBarAToJSON :: TestTree
 testBarAToJSON =
   testCase "toJSON BarA" $
     assertEqual
-      "Bar: JSON should match handwritten JSON"
+      "Bar: toJSON should match handwritten JSON"
       exampleBarAJSON
       (toJSON exampleBarA)
 
@@ -59,7 +61,7 @@ testBarBToJSON :: TestTree
 testBarBToJSON =
   testCase "toJSON BarB" $
     assertEqual
-      "Bar: JSON should match handwritten JSON"
+      "Bar: toJSON should match handwritten JSON"
       exampleBarBJSON
       (toJSON exampleBarB)
 
@@ -70,6 +72,22 @@ testBarBFromJSON =
       "Bar: fromJSON . toJSON == Success"
       (Success exampleBarB)
       (fromJSON exampleBarBJSON)
+
+testAccessToJSON :: TestTree
+testAccessToJSON =
+  testCase "toJSON Access" $
+    assertEqual
+      "Access: toJSON should match handwritten JSON"
+      "link"
+      (toJSON Link)
+
+testAccessFromJSON :: TestTree
+testAccessFromJSON =
+  testCase "fromJSON Access" $
+    assertEqual
+      "Access: fromJSON . toJSON == Success"
+      (Success Link)
+      (fromJSON "link")
 
 data A = A {thing :: Text, other :: Int}
   deriving (Eq, Show)
@@ -142,3 +160,14 @@ exampleBarB = BarB (B 831)
 
 exampleBarBJSON :: Value
 exampleBarBJSON = [aesonQQ| {"b_thing": 831} |]
+
+data Access = Public | Private | Link | Code
+  deriving (Eq, Show)
+  deriving (ToJSON, FromJSON) via TypedSchema Access
+
+instance ToTypedSchema Access where
+  schema = named "Access" $ enum "Access" $
+       element "public" Public
+    <> element "private" Private
+    <> element "link" Link
+    <> element "code" Code
