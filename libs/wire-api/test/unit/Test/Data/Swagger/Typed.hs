@@ -22,7 +22,11 @@ tests =
       testBarBToJSON,
       testBarBFromJSON,
       testAccessToJSON,
-      testAccessFromJSON
+      testAccessFromJSON,
+      testUser1ToJSON,
+      testUser1FromJSON,
+      testUser2ToJSON,
+      testUser2FromJSON
     ]
 
 testFooToJSON :: TestTree
@@ -88,6 +92,41 @@ testAccessFromJSON =
       "Access: fromJSON . toJSON == Success"
       (Success Link)
       (fromJSON "link")
+
+testUser1ToJSON :: TestTree
+testUser1ToJSON =
+  testCase "toJSON User" $
+    assertEqual
+      "User1: toJSON should match handwritten JSON"
+      exampleUser1JSON
+      (toJSON exampleUser1)
+
+testUser1FromJSON :: TestTree
+testUser1FromJSON =
+  testCase "fromJSON User" $
+    assertEqual
+      "User1: fromJSON . toJSON == Success"
+      (Success exampleUser1)
+      (fromJSON exampleUser1JSON)
+
+testUser2ToJSON :: TestTree
+testUser2ToJSON =
+  testCase "toJSON User" $
+    assertEqual
+      "User2: toJSON should match handwritten JSON"
+      exampleUser2JSON
+      (toJSON exampleUser2)
+
+testUser2FromJSON :: TestTree
+testUser2FromJSON =
+  testCase "fromJSON User" $
+    assertEqual
+      "User2: fromJSON . toJSON == Success"
+      (Success exampleUser2)
+      (fromJSON exampleUser2JSON)
+
+
+---
 
 data A = A {thing :: Text, other :: Int}
   deriving (Eq, Show)
@@ -171,3 +210,30 @@ instance ToTypedSchema Access where
     <> element "private" Private
     <> element "link" Link
     <> element "code" Code
+
+-- optional fields
+
+data User = User
+  { userName :: Text
+  , userHandle :: Maybe Text
+  , userExpire :: Maybe Int }
+  deriving (Eq, Show)
+  deriving (ToJSON, FromJSON) via TypedSchema User
+
+instance ToTypedSchema User where
+  schema = object "User" $ User
+    <$> userName .= field "name" (unnamed schema)
+    <*> userHandle .= opt (field "handle" (unnamed schema))
+    <*> userExpire .= opt (field "expire" (unnamed schema))
+
+exampleUser1 :: User
+exampleUser1 = User "Alice" (Just "alice") Nothing
+
+exampleUser1JSON :: Value
+exampleUser1JSON = [aesonQQ| {"name": "Alice", "handle": "alice"} |]
+
+exampleUser2 :: User
+exampleUser2 = User "Bob" Nothing (Just 100)
+
+exampleUser2JSON :: Value
+exampleUser2JSON = [aesonQQ| {"name": "Bob", "expire": 100} |]

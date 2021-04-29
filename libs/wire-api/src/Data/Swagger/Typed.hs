@@ -18,6 +18,7 @@ module Data.Swagger.Typed
     field',
     array,
     enum,
+    opt,
     element,
     tag,
     unnamed,
@@ -286,6 +287,18 @@ enum name sch = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
     i x =  A.withText (T.unpack name) (schemaIn sch) x
        <|> fail ("Unexpected value for enum " <> T.unpack name)
     o = fmap A.toJSON . (getAlt <=< schemaOut sch)
+
+-- | An optional schema.
+--
+-- This is most commonly used for optional fields. The parser will
+-- return 'Nothing' if the field is missing, and conversely the
+-- serialiser will simply omit the field when its value is 'Nothing'.
+opt :: Monoid w => SchemaP d v w a b -> SchemaP d v w (Maybe a) (Maybe b)
+opt sch = SchemaP (SchemaDoc d) (SchemaIn i) (SchemaOut o)
+  where
+    d = schemaDoc sch
+    i = optional . schemaIn sch
+    o = maybe (pure mempty) (schemaOut sch)
 
 data WithDeclare s = WithDeclare (Declare ()) s
   deriving Functor
