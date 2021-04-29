@@ -80,6 +80,8 @@ import qualified Test.QuickCheck as QC
 import Wire.API.Arbitrary (Arbitrary (arbitrary), GenericUniform (..))
 import Wire.API.Conversation.Member
 import Wire.API.Conversation.Role (RoleName, roleNameWireAdmin)
+import qualified Data.Swagger.Typed as TS
+import Control.Lens ((?~))
 
 --------------------------------------------------------------------------------
 -- Conversation
@@ -207,24 +209,17 @@ data Access
     CodeAccess
   deriving stock (Eq, Ord, Bounded, Enum, Show, Generic)
   deriving (Arbitrary) via (GenericUniform Access)
+  deriving (ToJSON, FromJSON) via TS.TypedSchema Access
+
+instance TS.ToTypedSchema Access where
+  schema = TS.enum "Access" $ mconcat
+    [ TS.element "private" PrivateAccess
+    , TS.element "invite" InviteAccess
+    , TS.element "link" LinkAccess
+    , TS.element "code" CodeAccess ]
 
 typeAccess :: Doc.DataType
 typeAccess = Doc.string . Doc.enum $ cs . encode <$> [(minBound :: Access) ..]
-
-instance ToJSON Access where
-  toJSON PrivateAccess = String "private"
-  toJSON InviteAccess = String "invite"
-  toJSON LinkAccess = String "link"
-  toJSON CodeAccess = String "code"
-
-instance FromJSON Access where
-  parseJSON = withText "Access" $ \s ->
-    case s of
-      "private" -> return PrivateAccess
-      "invite" -> return InviteAccess
-      "link" -> return LinkAccess
-      "code" -> return CodeAccess
-      x -> fail ("Invalid Access Mode: " ++ show x)
 
 -- | AccessRoles define who can join conversations. The roles are
 -- "supersets", i.e. Activated includes Team and NonActivated includes
@@ -242,21 +237,14 @@ data AccessRole
     NonActivatedAccessRole
   deriving stock (Eq, Ord, Show, Generic)
   deriving (Arbitrary) via (GenericUniform AccessRole)
+  deriving (ToJSON, FromJSON) via TS.TypedSchema AccessRole
 
-instance ToJSON AccessRole where
-  toJSON PrivateAccessRole = String "private"
-  toJSON TeamAccessRole = String "team"
-  toJSON ActivatedAccessRole = String "activated"
-  toJSON NonActivatedAccessRole = String "non_activated"
-
-instance FromJSON AccessRole where
-  parseJSON = withText "access-role" $ \s ->
-    case s of
-      "private" -> return PrivateAccessRole
-      "team" -> return TeamAccessRole
-      "activated" -> return ActivatedAccessRole
-      "non_activated" -> return NonActivatedAccessRole
-      x -> fail ("Invalid Access Role: " ++ show x)
+instance TS.ToTypedSchema AccessRole where
+  schema = TS.enum "Access" $ mconcat
+    [ TS.element "private" PrivateAccessRole
+    , TS.element "team" TeamAccessRole
+    , TS.element "activated" ActivatedAccessRole
+    , TS.element "non_activated" NonActivatedAccessRole ]
 
 data ConvType
   = RegularConv
@@ -293,6 +281,9 @@ instance FromJSON ConvType where
 newtype ReceiptMode = ReceiptMode {unReceiptMode :: Int32}
   deriving stock (Eq, Ord, Show)
   deriving newtype (Arbitrary)
+
+instance TS.ToTypedSchema ReceiptMode where
+  schema = ReceiptMode <$> unReceiptMode TS..= TS.schema
 
 instance ToJSON ReceiptMode where
   toJSON = toJSON . unReceiptMode
@@ -498,19 +489,21 @@ newtype ConversationRename = ConversationRename
   }
   deriving stock (Eq, Show)
   deriving newtype (Arbitrary)
+  deriving (ToJSON, FromJSON) via TS.TypedSchema ConversationRename
+
+instance TS.ToTypedSchema ConversationRename where
+  schema = TS.object "ConversationRename" $
+    ConversationRename <$>
+      cupName TS..= TS.field' "name" (TS.description ?~ desc)
+                                     (TS.unnamed (TS.schema @Text))
+    where
+      desc = "The new conversation name"
 
 modelConversationUpdateName :: Doc.Model
 modelConversationUpdateName = Doc.defineModel "ConversationUpdateName" $ do
   Doc.description "Contains conversation name to update"
   Doc.property "name" Doc.string' $
     Doc.description "The new conversation name"
-
-instance ToJSON ConversationRename where
-  toJSON cu = object ["name" .= cupName cu]
-
-instance FromJSON ConversationRename where
-  parseJSON = withObject "conversation-rename object" $ \c ->
-    ConversationRename <$> c .: "name"
 
 data ConversationAccessUpdate = ConversationAccessUpdate
   { cupAccess :: [Access],
@@ -545,6 +538,17 @@ data ConversationReceiptModeUpdate = ConversationReceiptModeUpdate
   }
   deriving stock (Eq, Show, Generic)
   deriving (Arbitrary) via (GenericUniform ConversationReceiptModeUpdate)
+  deriving (ToJSON, FromJSON) via TS.TypedSchema ConversationReceiptModeUpdate
+
+instance TS.ToTypedSchema ConversationReceiptModeUpdate where
+  schema = TS.object' "ConversationReceiptModeUpdate" (TS.description ?~ desc) $
+    ConversationReceiptModeUpdate <$>
+      cruReceiptMode TS..= TS.field "receipt_mode" (TS.unnamed TS.schema)
+    where
+      desc =
+        "Contains conversation receipt mode to update to. Receipt mode tells \
+        \clients whether certain types of receipts should be sent in the given \
+        \conversation or not. How this value is interpreted is up to clients."
 
 modelConversationReceiptModeUpdate :: Doc.Model
 modelConversationReceiptModeUpdate = Doc.defineModel "conversationReceiptModeUpdate" $ do
@@ -554,16 +558,6 @@ modelConversationReceiptModeUpdate = Doc.defineModel "conversationReceiptModeUpd
     \conversation or not. How this value is interpreted is up to clients."
   Doc.property "receipt_mode" Doc.int32' $
     Doc.description "Receipt mode: int32"
-
-instance ToJSON ConversationReceiptModeUpdate where
-  toJSON c =
-    object
-      [ "receipt_mode" .= cruReceiptMode c
-      ]
-
-instance FromJSON ConversationReceiptModeUpdate where
-  parseJSON = withObject "conversation-receipt-mode-update" $ \o ->
-    ConversationReceiptModeUpdate <$> o .: "receipt_mode"
 
 data ConversationMessageTimerUpdate = ConversationMessageTimerUpdate
   { -- | New message timer

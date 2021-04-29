@@ -10,8 +10,12 @@ module Data.Swagger.Typed
     ToTypedSchema (..),
     TypedSchema (..),
     HasDoc (..),
+    SwaggerDoc,
+    NamedSwaggerDoc,
     object,
+    object',
     field,
+    field',
     array,
     enum,
     element,
@@ -21,6 +25,7 @@ module Data.Swagger.Typed
     (.=),
     typedSchemaToJSON,
     typedSchemaParseJSON,
+    S.description, -- re-export
   )
 where
 
@@ -203,6 +208,12 @@ field name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
 
     s = mkField name (schemaDoc sch)
 
+-- | Like 'field', but apply an arbitrary function to the
+-- documentation of the field.
+field' :: HasField doc' doc => Text -> (doc' -> doc')
+       -> ValueSchema doc' a -> ObjectSchema doc a
+field' name modify sch = field name (over doc modify sch)
+
 -- | Change the input type of a schema.
 (.=) :: Profunctor p => (a -> a') -> p a' b -> p a b
 (.=) = lmap
@@ -221,6 +232,12 @@ object name sch = SchemaP (SchemaDoc s) (SchemaIn r) (SchemaOut w)
     r = A.withObject (T.unpack name) (schemaIn sch)
     w x = A.object <$> schemaOut sch x
     s = mkObject name (schemaDoc sch)
+
+-- | Like 'object', but apply an arbitrary function to the
+-- documentation of the resulting object.
+object' :: HasObject doc doc' => Text -> (doc' -> doc')
+        -> ObjectSchema doc a -> ValueSchema doc' a
+object' name modify sch = over doc modify (object name sch)
 
 -- | Turn a named schema into an unnamed one.
 --
